@@ -3,7 +3,7 @@ const qrcode = require('qrcode-terminal');
 const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 
 const client = new Client({
-  authStrategy: new LocalAuth(), // mantém a sessão salva
+  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),// mantém a sessão salva
   puppeteer: { headless: true, args: ['--no-sandbox'] }
 });
 
@@ -216,9 +216,10 @@ client.on('message', async (msg) => {
             console.error('Erro no processamento da mensagem:', err);
           }
         });
-    const express = require("express");
 
+// Servidor simples para manter o bot ativo (útil em plataformas como Heroku)
 // health-check server
+const express = require('express');
 const app = express();
-app.get("/", (req, res) => res.send("🤖 Chatbot online!"));
-app.listen(3000, () => console.log("Servidor de health-check rodando na porta 3000"));
+app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
+app.listen(3000, () => console.log('Health-check na porta 3000'));
