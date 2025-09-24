@@ -1,9 +1,15 @@
 {
+  "name": "crossfit-chatbot",
+  "version": "1.0.0",
+  "main": "chatbot.js",
+  "scripts": {
+    "start": "node chatbot.js"
+  },
   "dependencies": {
+    "express": "^4.18.2",
     "moment-timezone": "^0.5.45",
     "openai": "^4.78.1",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "1.33.2"
-  },
-  "type": "module"
+  }
 }
