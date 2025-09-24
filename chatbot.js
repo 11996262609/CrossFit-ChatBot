@@ -216,7 +216,7 @@ client.on('message', async (msg) => {
             console.error('Erro no processamento da mensagem:', err);
           }
         });
-import express from "express";
+    const express = require("express");
 
 // health-check server
 const app = express();
