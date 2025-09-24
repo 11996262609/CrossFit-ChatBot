@@ -1,28 +1,45 @@
-# Imagem base com Node.js
+# ---- Build env
 FROM node:18-slim
 
-# Instala Chromium (necessário pro Puppeteer/whatsapp-web.js)
+# 1) Dependências do Chromium
 RUN apt-get update && apt-get install -y \
     chromium \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libxtst6 \
+    libxcursor1 \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-# Define diretório de trabalho dentro do container
-WORKDIR /app
-
-# Copia arquivos de dependências
-COPY package*.json ./
-
-# Instala dependências
-RUN npm install
-
-# Copia todo o código do projeto
-COPY . .
-
-# Define caminho do Chromium para o Puppeteer
+# 2) Aponta o path do Chromium para o puppeteer-core usado pelo whatsapp-web.js
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Expõe porta para health-check na Koyeb
+# 3) Diretório do app
+WORKDIR /app
+
+# 4) Instala só deps
+COPY package*.json ./
+RUN npm ci --only=production
+
+# 5) Copia código
+COPY . .
+
+# 6) Porta do health-check
 EXPOSE 3000
 
-# Comando que inicia o bot
-CMD ["node", "chatbot.js"]
+# 7) Start
+CMD ["npm", "start"]

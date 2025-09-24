@@ -3,8 +3,21 @@ const qrcode = require('qrcode-terminal');
 const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),// mantém a sessão salva
-  puppeteer: { headless: true, args: ['--no-sandbox'] }
+  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+  puppeteer: {
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // usa o Chromium do container
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process'
+    ],
+    timeout: 90000 // dá mais tempo pro Chromium subir no plano Nano
+  }
+
 });
 
 // QR
@@ -223,3 +236,7 @@ const express = require('express');
 const app = express();
 app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
 app.listen(3000, () => console.log('Health-check na porta 3000'));
+module.exports = app;
+
+process.on('unhandledRejection', (e) => console.error('UnhandledRejection:', e));
+process.on('uncaughtException', (e) => console.error('UncaughtException:', e));
