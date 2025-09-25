@@ -2,8 +2,12 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
 
-// Limpeza de locks do Chromium a cada start (ok manter)
+// LIMPEZA: locks do perfil padrão do Chromium + perfil efêmero
 try {
+  // limpa perfil efêmero usado abaixo
+  fs.rmSync('/tmp/chrome-data', { recursive: true, force: true });
+
+  // remove possíveis locks do perfil default (~/.config/chromium)
   const cfg = path.join(process.env.HOME || '/root', '.config', 'chromium');
   ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
     const p = path.join(cfg, f);
@@ -11,11 +15,11 @@ try {
   });
   console.log('[Chromium] Mechas limpas (se existiam).');
 } catch (e) {
-  console.warn('[Chromium] Aviso ao limpar locks:', e.message);
+  console.warn('[Chromium] Falha ao limpar locks:', e.message);
 }
 
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // persiste no volume
+  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // sessão persiste no volume
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
@@ -27,11 +31,23 @@ const client = new Client({
       '--no-zygote',
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-features=TranslateUI'
+      '--disable-features=TranslateUI',
+      '--user-data-dir=/tmp/chrome-data' // perfil NOVO e efêmero a cada boot
     ],
     timeout: 90000
   }
 });
+
+// logs úteis
+client.on('qr', (qr) => {
+  const qrcode = require('qrcode-terminal');
+  console.log('[QR] Aguardando leitura...');
+  qrcode.generate(qr, { small: true });
+});
+client.on('ready', () => console.log('[READY] WhatsApp conectado (Madala CF)'));
+client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
+client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
+
 
 // (mantenha também seus logs de QR/READY)
 client.on('qr', (qr) => {
