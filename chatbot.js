@@ -1,29 +1,24 @@
-const { Client, LocalAuth, List } = require('whatsapp-web.js');
-const path = require('path');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const fs = require('fs');
+const path = require('path');
 
-// (opcional) limpeza preventiva de locks do chromium
-(function clearChromeSingletonLocks() {
-  try {
-    const home = process.env.HOME || '/root';
-    const chromeCfg = path.join(home, '.config', 'chromium');
-    ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
-      const p = path.join(chromeCfg, f);
-      if (fs.existsSync(p)) fs.rmSync(p, { force: true });
-    });
-    console.log('[Chromium] Locks limpos (se existiam).');
-  } catch (e) {
-    console.warn('[Chromium] Falha ao limpar locks:', e.message);
-  }
-})();
+// Limpeza de locks do Chromium a cada start (ok manter)
+try {
+  const cfg = path.join(process.env.HOME || '/root', '.config', 'chromium');
+  ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
+    const p = path.join(cfg, f);
+    if (fs.existsSync(p)) fs.rmSync(p, { force: true });
+  });
+  console.log('[Chromium] Mechas limpas (se existiam).');
+} catch (e) {
+  console.warn('[Chromium] Aviso ao limpar locks:', e.message);
+}
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // persiste no volume
-  // DÊ UM PERFIL VOLÁTIL AO CHROMIUM (não é o da sessão do WhatsApp)
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-    userDataDir: '/tmp/chromium-profile', // perfil isolado e descartável
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -37,6 +32,14 @@ const client = new Client({
     timeout: 90000
   }
 });
+
+// (mantenha também seus logs de QR/READY)
+client.on('qr', (qr) => {
+  const qrcode = require('qrcode-terminal');
+  console.log('[QR] Aguardando leitura...');
+  qrcode.generate(qr, { small: true });
+});
+client.on('ready', () => console.log('[READY] WhatsApp conectado (Madala CF)'));
 
 
 // eventos úteis
