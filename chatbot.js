@@ -1,23 +1,43 @@
-// topo do arquivo (depois dos require)
 const { Client, LocalAuth, List } = require('whatsapp-web.js');
+const path = require('path');
+const fs = require('fs');
 
-// cria o cliente com sessão em volume e Chromium do container
+// (opcional) limpeza preventiva de locks do chromium
+(function clearChromeSingletonLocks() {
+  try {
+    const home = process.env.HOME || '/root';
+    const chromeCfg = path.join(home, '.config', 'chromium');
+    ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
+      const p = path.join(chromeCfg, f);
+      if (fs.existsSync(p)) fs.rmSync(p, { force: true });
+    });
+    console.log('[Chromium] Locks limpos (se existiam).');
+  } catch (e) {
+    console.warn('[Chromium] Falha ao limpar locks:', e.message);
+  }
+})();
+
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // <- persiste no volume /app/.wwebjs_auth
+  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // persiste no volume
+  // DÊ UM PERFIL VOLÁTIL AO CHROMIUM (não é o da sessão do WhatsApp)
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    userDataDir: '/tmp/chromium-profile', // perfil isolado e descartável
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-zygote',
-      '--single-process'
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-features=TranslateUI'
     ],
     timeout: 90000
   }
 });
+
 
 // eventos úteis
 client.on('qr', (qr) => {
