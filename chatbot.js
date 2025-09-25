@@ -1,12 +1,12 @@
-// Leitor de QR Code / sessão
-const qrcode = require('qrcode-terminal');
-const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
+// topo do arquivo (depois dos require)
+const { Client, LocalAuth, List } = require('whatsapp-web.js');
 
+// cria o cliente com sessão em volume e Chromium do container
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // <- persiste no volume /app/.wwebjs_auth
   puppeteer: {
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // usa o Chromium do container
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -15,20 +15,18 @@ const client = new Client({
       '--no-zygote',
       '--single-process'
     ],
-    timeout: 90000 // dá mais tempo pro Chromium subir no plano Nano
+    timeout: 90000
   }
-
 });
 
-// QR
-client.on('qr', (qr) => qrcode.generate(qr, { small: true }));
-
-// Ready
-client.on('ready', () => {
-  console.log('Tudo certo! WhatsApp conectado (Madala CF).');
+// eventos úteis
+client.on('qr', (qr) => {
+  const qrcode = require('qrcode-terminal');
+  qrcode.generate(qr, { small: true });
 });
+client.on('ready', () => console.log('Tudo certo! WhatsApp conectado (Madala CF).'));
 
-// Inicializa
+// inicializa
 client.initialize();
 
 // Utils
@@ -51,17 +49,57 @@ Escolha uma opção para descobri mais sobre a *Madala CF* (envie o número):
 0 - ☎ Falar com Tchê (gerente geral)
 `;
 
-// Remova a linha com erro e use esta estrutura
 function menu_rápido(nome = '') {
-    return `Olá ${nome ? nome.split(' ')[0] : ''}! 👋\n
-    Escolha uma opção para descobri mais sobre a *Madala CF* (envie o número):
+  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
 
-    1 - 🏋️ Como funcionam as aulas de CrossFit
-    2 - 🥋 Aulas de judo com Sensei Jeferson todos os dias.
-    3 - 🌐 Redes sociais Madala CF
-    4 - 🏆 Eentos Madala CF
-    0 - ☎ Falar com Tchê (gerente geral)"`;
+Escolha uma opção para descobrir mais sobre a *Madala CF* (envie o número):
+
+1 - 🏋️ Como funcionam as aulas de CrossFit
+2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.
+3 - 🌐 Redes sociais Madala CF
+4 - 🏆 Eventos Madala CF
+0 - ☎ Falar com Tchê (gerente geral)`;
 }
+
+function opção(nome = '') {
+  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
+
+Mais - 📊 Para mais informações sobre planos e valores
+Volta - 🔙 Voltar ao menu inicial
+Atendente - ☎ Falar com um atendente`;
+}
+
+function marcar(nome = '') {
+  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
+
+Marcar - 📊 Para agendar uma aula esperimental
+Menu - 🔙 Voltar ao menu inicial
+Gerente - ☎ Falar com um atendente`;
+}
+
+function planos_valores(nome = '') {
+    return `Aqui ${nome ? nome.split(' ')[0] : ''}! 👋\n
+
+      *PLANOS E VALORES*
+    Planos do CrossFit (premium):\n
+   💰 Trimestral: R$ 510/mês\n
+   💰 Semestral: R$ 440/mês\n
+   💰 Anual: R$ 360/mês\n\n
+
+Pagamento: Cartão crédito/Débito, PIX.\n`;
+}
+
+
+function cfPosMenu(nome='') {
+  const first = nome ? nome.split(' ')[0] : '';
+  return `${first ? first + ', ' : ''}escolha uma opção (digite a palavra):
+
+• *Mais*  → 📊 Planos e valores
+• *Marcar* → 🗓️ Agendar aula experimental
+• *Menu*  → 🔙 Voltar ao menu inicial
+• *Sair*  → ❌ Encerrar`;
+}
+
 
 // Respostas
 const RESPOSTAS = {
@@ -80,7 +118,7 @@ Bora fazer uma aula teste? 💪
 ✅Agente sua aula experimental:
 https://calendar.app.google/9r6mFZTPwUivm4x89`
     + '\n\n' +
-' 1 - Para mais informações',
+'',
 
   planos:
 `*PLANOS E VALORES*
@@ -90,7 +128,9 @@ Planos do CrossFit (premium):\n
 💰 Anual: R$ 360/mês\n\n
 
 Pagamento: Cartão, PIX, boleto.\n
-1 para marcar aula experimental (grátis).`,
+
+✅Agente sua aula experimental:
+https://calendar.app.google/9r6mFZTPwUivm4x89`,
 
 
   Modalidade_judo:
@@ -118,15 +158,6 @@ https://wa.me/qr/LI5TG3DW5XAZF1
 
 Envie um minuto para retorno.`,
 
- menu_rápido:
-` Escolha uma opção para descobri mais sobre a *Madala CF* (envie o número):
-
-1 - 🏋️ Como funcionam as aulas de CrossFit
-2 - 🥋 Aulas de judo com Sensei Jeferson todos os dias.
-3 - 🌐 Redes sociais Madala CF
-4 - 🏆 Eentos Madala CF
-0 - ☎ Falar com Tchê (gerente geral)`,
-
 Redes_sociais:
 `*REDES SOCIAIS MADALA CF* 📱\n
 Siga a gente nas redes sociais e fique por dentro de todas as novidades, dicas de treino e muito mais!\n
@@ -134,101 +165,192 @@ Siga a gente nas redes sociais e fique por dentro de todas as novidades, dicas d
 👍Facebook: https://www.facebook.com/madalacf\n
 ▶️ YouTube: https://www.youtube.com/@madalacf\n
 🌐 Site: https://madalacf.com.br\n`,
+
+
 };
 
 // Helper para enviar o MENU com botões
-async function enviarMenu(msg, chat, nome) {
-  const botoes = new Buttons(
-    'Escolha abaixo ou digite o número correspondente:',
-    [
-      { body: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
-      { body: '2 - 🥋 Aulas de judo com Sensei Jeferson todos os dias.' },
-      { body: '3 - 🌐 Redes sociais Madala CF' },
-      { body: '4 - 🏆 Eentos Madala CF' },
-      { body: '0 - ☎ Falar com Tchê (gerente geral)' }
-    ],
-    'Madala CF',
-    'Você também pode digitar: menu, voltar'
-  );
-  await typing(chat);
-  await client.sendMessage(msg.from, menuText(nome));
-  await delay(400);
-  await client.sendMessage(msg.from, botoes);
+// ===================== HELPERS / ESTADO =====================
+const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
+
+
+
+const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
+
+// Card pós-Menu do CrossFit (texto-livre: Mais/Marcar/Menu/Sair)
+function cfPosMenu(nome='') {
+  const n = firstName(nome);
+  return `${n ? n + ', ' : ''}escolha uma opção (digite a palavra):
+• *Mais*   → 📊 Planos e valores
+• *Marcar* → 🗓️ Agendar aula experimental
+• *Menu*   → 🔙 Voltar ao menu inicial
+• *Sair*   → ❌ Encerrar`;
 }
 
-// Router principal
+
+// ===================== MENU (LIST) ATUALIZADO =====================
+// Envia APENAS o List (sem duplicar com texto separado)
+async function enviarMenu(msg, chat, nome) {
+  const first = v => (v ? String(v).trim().split(/\s+/)[0] : '');
+
+  const textoFallback = `Olá ${first(nome)}! 👋
+
+Bem-vinda à família *Madala CF* 💪
+Escolha uma opção (responda com o número):
+1 - 🏋️ Como funcionam as aulas de CrossFit
+2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.
+3 - 🌐 Redes sociais Madala CF
+4 - 🏆 Eventos Madala CF
+0 - ☎ Falar com Tchê (gerente geral)`;
+
+  await typing(chat);
+  // 1) Sempre envia o fallback (garante funcionamento no Web/Desktop)
+  await client.sendMessage(msg.from, textoFallback);
+
+  // 2) Tenta enviar o List (aparece bem no celular)
+  try {
+    const body = `Toque em "Ver opções" no celular para abrir a lista.`;
+    const sections = [{
+      title: 'Menu principal',
+      rows: [
+        { id: '1', title: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
+        { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.' },
+        { id: '3', title: '3 - 🌐 Redes sociais Madala CF' },
+        { id: '4', title: '4 - 🏆 Eventos Madala CF' },
+        { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
+      ],
+    }];
+    const list = new List(body, 'Ver opções', sections, 'Madala CF', 'Se preferir, digite o número.');
+    await client.sendMessage(msg.from, list);
+  } catch (e) {
+    // Se o List não renderizar no dispositivo (ex.: Web), ignore:
+    console.warn('List não enviado (usando só fallback).', e?.message || e);
+  }
+}
+// ===================== ROUTER PRINCIPAL (UM ÚNICO LISTENER) =====================
 client.on('message', async (msg) => {
   try {
-    // Ignora grupos e status
+    // Ignora grupos/status
     if (!msg.from.endsWith('@c.us')) return;
 
-    const chat = await msg.getChat();
+    const chat    = await msg.getChat();
     const contact = await msg.getContact();
-    const nome = contact.pushname || '';
+    const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
+    const chatId  = msg.from;
 
-    // Normaliza entrada
-    const texto = (msg.body || '').toString().trim();
-    const lower = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    // Normalização
+    const rawText   = (msg.body || '').toString().trim();
+    const lowerText = rawText.toLowerCase();
+    let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // Saudações / abertura de funil
-    const ehSaudacao = /(Oi|olá|ola|olaa|hey|eai|e aí|tudo bem|fala|alô|boa|opa|salve|fala aí|tudo certo|e aí| como vai|oi| tudo bem|alô| oi|firmeza|oi| como posso ajudar|olá| bem-vindo|saudações|oi| por favor|diga|oi| o que deseja|olá| bom dia|olá| boa tarde|olá| boa noite|bem-vindo|oi| à disposição|oi| como está|olá| fala|oi| o que manda|e aí| beleza|qual é|e aí| meu chapa|fala| irmão|e aí| meu querido|oi| meu nome é...)/i.test(lower);
-    const ehMenu = ehSaudacao || lower === 'voltar' || lower === 'inicio' || lower === 'start';
+    // Se a mensagem for resposta de List, use o id da linha para rotear (fica '1','2','3','4','0')
+    if (msg.type === 'list_response' && msg.selectedRowId) {
+      asciiText = String(msg.selectedRowId).trim().toLowerCase();
+    }
 
-    if (ehMenu) {
+    // Gatilho de saudação/menu → abre o menu inicial (List)
+    const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
+    if (ehSaudacao) {
+      estado[chatId] = 'MAIN';          // reseta estado
       await enviarMenu(msg, chat, nome);
       return;
     }
 
-    // Ações por opção numérica
-    switch (lower) {
-      case '1':
-      case '1 - 🏋️ - Como funcionam as aulas de CrossFit':
-        await typing(chat);
-        await client.sendMessage(msg.from, RESPOSTAS.comoFunciona);
-        await client.sendMessage(msg.from, menu_rápido(nome));
-        break;
+    // Estado atual
+    const st = estado[chatId] || 'MAIN';
 
-      case '2':
-      case '2 - 🥋 Aulas de judo com Sensei Jeferson todos os dias.':
+    // ==================== MAIN (menu principal) ====================
+    if (st === 'MAIN') {
+      // 1) CrossFit → envia "Como funciona" e o pós-menu CF
+      if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
         await typing(chat);
-        await client.sendMessage(msg.from, RESPOSTAS.Modalidade_judo);
-        await client.sendMessage(msg.from, menu_rápido(nome));
-        break;
+        await client.sendMessage(chatId, RESPOSTAS.comoFunciona); // seu card "como funciona"
+        await client.sendMessage(chatId, cfPosMenu(nome));        // pós-menu CF (Mais/Marcar/Menu/Sair)
+        estado[chatId] = 'CF_MENU';
+        return;
+      }
 
-      case '3':
-      case '3 - 🌐 Redes sociais Madala CF':
-      case '3 - 🌐 Redes sociais Madala CF':
+      // 2) Judô
+      if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
         await typing(chat);
-        await client.sendMessage(msg.from, RESPOSTAS.Redes_sociais);
-        await client.sendMessage(msg.from, menu_rápido(nome));
-        break;
+        await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
+        await enviarMenu(msg, chat, nome); // reabre o menu principal após card
+        return;
+      }
 
-      case '4':
-      case '4 - 🏆 Eentos Madala CF':
-      case '4 - 🏆 Eentos Madala CF':
+      // 3) Redes sociais
+      if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
         await typing(chat);
-        await client.sendMessage(msg.from, RESPOSTAS.Eventos_madalacf);
-        await client.sendMessage(msg.from, menu_rápido(nome));
-        break;
+        await client.sendMessage(chatId, RESPOSTAS.Redes_sociais);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
 
-      case '0':
-      case '0 - ☎ Falar com Tchê (gerente geral)':
+      // 4) Eventos
+      if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
         await typing(chat);
-        await client.sendMessage(msg.from, RESPOSTAS.atendente);
-        await client.sendMessage(msg.from, menu_rápido(nome));
-        break;
-        default:
-        // Fallback inteligente: se a pessoa digitou texto livre, ofereça ajuda e menu
+        await client.sendMessage(chatId, RESPOSTAS.Eventos_madalacf);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
+
+      // 0) Atendente
+      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
         await typing(chat);
-                await client.sendMessage(
-                  msg.from,
-                  'Não entendi bem sua mensagem. 😊\nEnvie um *número* do menu ou digite *0* para falar com um atendente.'
-                );
-            }
-          } catch (err) {
-            console.error('Erro no processamento da mensagem:', err);
-          }
-        });
+        await client.sendMessage(chatId, RESPOSTAS.atendente);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
+
+      // Fallback no MAIN
+      await typing(chat);
+      await client.sendMessage(chatId, 'Não entendi. Toque em "Ver opções" ou digite *menu* para abrir o menu.');
+      await enviarMenu(msg, chat, nome);
+      return;
+    }
+
+    // ==================== CF_MENU (pós-menu do CrossFit) ====================
+    if (st === 'CF_MENU') {
+      // "mais" → planos
+      if (asciiText === 'mais' || asciiText === 'planos' || asciiText === 'valores' || asciiText === 'precos' || asciiText === 'preços' || asciiText === 'Mais' || asciiText === 'Planos' || asciiText === 'Valores' || asciiText === 'Precos' || asciiText === 'Preços') {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.planos); // ou planos_valores(nome)
+        await client.sendMessage(chatId, cfPosMenu(nome));  // permanece no CF_MENU
+        return;
+      }
+
+      // "marcar" → link de agendamento (defina RESPOSTAS.agendarCrossfit)
+      if (asciiText === 'marcar' || asciiText === 'agendar' || asciiText === 'agendamento' || asciiText === 'Marcar' || asciiText === 'Agendar' || asciiText === 'Agendamento') {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.agendarCrossfit);
+        await client.sendMessage(chatId,comoFunciona(nome));
+        return;
+      }
+
+      // "menu"/"inicio" → volta ao menu inicial
+      if (['menu','inicio','início'].includes(asciiText)) {
+        estado[chatId] = 'MAIN';
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
+
+      // "sair" → encerra (reseta estado)
+      if (asciiText === 'sair') {
+        await client.sendMessage(chatId, 'Até logo! 👋');
+        estado[chatId] = 'MAIN';
+        return;
+      }
+
+      // Inválido no CF_MENU → reexibe instruções
+      await client.sendMessage(chatId, cfPosMenu(nome));
+      return;
+    }
+
+  } catch (err) {
+    console.error('Erro no processamento da mensagem:', err);
+  }
+});
+
 
 // Servidor simples para manter o bot ativo (útil em plataformas como Heroku)
 // health-check server
