@@ -27,16 +27,55 @@ try {
 }
 
 // === Rotas para exibir o QR no navegador (úteis no Koyeb e local) ===
+
+// SVG com quiet zone (margem) e tamanho fixo
 app.get('/qr.svg', async (_req, res) => {
   try {
-    if (!latestQR) return res.status(204).send(''); // já conectado
-    const svg = await QRCode.toString(latestQR, { type: 'svg', margin: 0 });
+    if (!latestQR) return res.status(204).end(); // já conectado
+    const svg = await QRCode.toString(latestQR, {
+      type: 'svg',
+      width: 360,
+      margin: 4,                  // quiet zone (bordas brancas)
+      errorCorrectionLevel: 'M'
+    });
     res.type('image/svg+xml').send(svg);
-  } catch (e) {
+  } catch {
     res.status(500).send('Falha ao gerar QR');
   }
 });
 
+// (opcional) PNG — às vezes fica mais “nítido” que SVG
+app.get('/qr.png', async (_req, res) => {
+  try {
+    if (!latestQR) return res.status(204).end();
+    const buf = await QRCode.toBuffer(latestQR, {
+      type: 'png',
+      width: 360,
+      margin: 4,
+      errorCorrectionLevel: 'M'
+    });
+    res.type('image/png').send(buf);
+  } catch {
+    res.status(500).send('Falha ao gerar QR');
+  }
+});
+
+// Página simples que autoatualiza e usa o PNG
+app.get('/qr', (_req, res) => {
+  if (!latestQR) {
+    return res.send('<h1>Já conectado ✅</h1><p>Nenhum QR ativo.</p>');
+  }
+  res.send(`<!doctype html>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="5">
+  <title>QR do WhatsApp</title>
+  <style>img{image-rendering:pixelated}body{font-family:system-ui,sans-serif}</style>
+  <h1>Escaneie com o WhatsApp</h1>
+  <img src="/qr.png" width="360" height="360" alt="QR" />
+  <p>Se não ler, tente a <a href="/qr.svg" target="_blank">versão SVG</a>.</p>`);
+});
+
+// Página simples que autoatualiza e usa o SVG
 app.get('/qr', (_req, res) => {
   if (!latestQR) {
     return res.send('<h1>Já conectado ✅</h1><p>Nenhum QR ativo no momento.</p>');
