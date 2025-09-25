@@ -1,23 +1,30 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+// ===== Imports e estado do QR =====
+const { Client, LocalAuth, List } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
+const QRCode = require('qrcode');              // p/ gerar imagem do QR (DataURL)
+const qrcodeTerminal = require('qrcode-terminal'); // p/ mostrar o QR no log
 
-// LIMPEZA: locks do perfil padrão do Chromium + perfil efêmero
+let latestQR = null;     // último QR recebido (p/ /qr)
+let latestQRAt = null;   // quando foi gerado
+
+// ===== Limpeza de locks do Chromium (evita "perfil em uso") =====
 try {
-  // limpa perfil efêmero usado abaixo
+  // perfil efêmero que vamos usar a cada boot
   fs.rmSync('/tmp/chrome-data', { recursive: true, force: true });
 
-  // remove possíveis locks do perfil default (~/.config/chromium)
+  // locks do perfil padrão do Chromium
   const cfg = path.join(process.env.HOME || '/root', '.config', 'chromium');
   ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
     const p = path.join(cfg, f);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
   });
-  console.log('[Chromium] Mechas limpas (se existiam).');
+  console.log('[Chromium] Locks limpos (se existiam).');
 } catch (e) {
   console.warn('[Chromium] Falha ao limpar locks:', e.message);
 }
 
+// ===== Criação do cliente WhatsApp =====
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // sessão persiste no volume
   puppeteer: {
@@ -32,191 +39,51 @@ const client = new Client({
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-features=TranslateUI',
-      '--user-data-dir=/tmp/chrome-data' // perfil NOVO e efêmero a cada boot
+      '--user-data-dir=/tmp/chrome-data' // perfil efêmero por execução
     ],
     timeout: 90000
   }
 });
 
-// logs úteis
+// ===== Listeners (apenas UM de cada) =====
 client.on('qr', (qr) => {
-  const qrcode = require('qrcode-terminal');
+  latestQR = qr;
+  latestQRAt = new Date();
   console.log('[QR] Aguardando leitura...');
-  qrcode.generate(qr, { small: true });
+  try { qrcodeTerminal.generate(qr, { small: true }); } catch {}
 });
-client.on('ready', () => console.log('[READY] WhatsApp conectado (Madala CF)'));
+
+client.on('ready', () => {
+  console.log('[READY] WhatsApp conectado (Madala CF)');
+  latestQR = null; // limpa ao conectar
+});
+
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
 client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
 
-
-// (mantenha também seus logs de QR/READY)
-client.on('qr', (qr) => {
-  const qrcode = require('qrcode-terminal');
-  console.log('[QR] Aguardando leitura...');
-  qrcode.generate(qr, { small: true });
-});
-client.on('ready', () => console.log('[READY] WhatsApp conectado (Madala CF)'));
-
-
-// eventos úteis
-client.on('qr', (qr) => {
-  const qrcode = require('qrcode-terminal');
-  qrcode.generate(qr, { small: true });
-});
-client.on('ready', () => console.log('Tudo certo! WhatsApp conectado (Madala CF).'));
-
-// inicializa
+// ===== Inicializa o WhatsApp =====
 client.initialize();
 
-// Utils
+// ===== Utils =====
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
+const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
-// Texto do menu principal
+// ===== Cards / Textos =====
 const menuText = (nome = '') => 
-`Olá ${nome ? nome.split(' ')[0] : ''}! 👋\n
+`Olá ${firstName(nome)}! 👋
 
-Bem vinda a família *Madala CF*💪 Com 10 anos de mercado, somos profissionais no compromisso que assumimos com você!
-Sua saúde e bem estar é a nossa prioridade.\n
-
-Escolha uma opção para descobri mais sobre a *Madala CF* (envie o número):
-
-1 - 🏋️ Como funcionam as aulas de CrossFit
-2 - 🥋 Aulas de judo com Sensei Jeferson todos os dias.
-3 - 🌐 Redes sociais Madala CF
-4 - 🏆 Eentos Madala CF
-0 - ☎ Falar com Tchê (gerente geral)
-`;
-
-function menu_rápido(nome = '') {
-  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
+Bem-vinda à família *Madala CF*💪 Com 10 anos de mercado, somos profissionais no compromisso que assumimos com você!
+Sua saúde e bem-estar é a nossa prioridade.
 
 Escolha uma opção para descobrir mais sobre a *Madala CF* (envie o número):
-
 1 - 🏋️ Como funcionam as aulas de CrossFit
 2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.
 3 - 🌐 Redes sociais Madala CF
 4 - 🏆 Eventos Madala CF
-0 - ☎ Falar com Tchê (gerente geral)`;
-}
+0 - ☎ Falar com Tchê (gerente geral)
+`;
 
-function opção(nome = '') {
-  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
-
-Mais - 📊 Para mais informações sobre planos e valores
-Volta - 🔙 Voltar ao menu inicial
-Atendente - ☎ Falar com um atendente`;
-}
-
-function marcar(nome = '') {
-  return ` ${nome ? nome.split(' ')[0] : ''}! 👋
-
-Marcar - 📊 Para agendar uma aula esperimental
-Menu - 🔙 Voltar ao menu inicial
-Gerente - ☎ Falar com um atendente`;
-}
-
-function planos_valores(nome = '') {
-    return `Aqui ${nome ? nome.split(' ')[0] : ''}! 👋\n
-
-      *PLANOS E VALORES*
-    Planos do CrossFit (premium):\n
-   💰 Trimestral: R$ 510/mês\n
-   💰 Semestral: R$ 440/mês\n
-   💰 Anual: R$ 360/mês\n\n
-
-Pagamento: Cartão crédito/Débito, PIX.\n`;
-}
-
-
-function cfPosMenu(nome='') {
-  const first = nome ? nome.split(' ')[0] : '';
-  return `${first ? first + ', ' : ''}escolha uma opção (digite a palavra):
-
-• *Mais*  → 📊 Planos e valores
-• *Marcar* → 🗓️ Agendar aula experimental
-• *Menu*  → 🔙 Voltar ao menu inicial
-• *Sair*  → ❌ Encerrar`;
-}
-
-
-// Respostas
-const RESPOSTAS = {
-  comoFunciona: 
-`*COMO FUNCIONA O CROSSFIT?*
-• Treinos em grupo com coach supervisionando (todos os níveis).
-• Aula com aquecimento, técnica.
-• Escalas: Iniciante, Intermediário e Avançado.
-• Avaliação inicial para ajustar cargas e movimentos.
-• Abrimos de Seg a Sáb. das 6h às 21h.
-
-Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9\n'+
-
-Bora fazer uma aula teste? 💪
-
-✅Agente sua aula experimental:
-https://calendar.app.google/9r6mFZTPwUivm4x89`
-    + '\n\n' +
-'',
-
-  planos:
-`*PLANOS E VALORES*
-Planos do CrossFit (premium):\n
-💰 Trimestral: R$ 510/mês\n
-💰 Semestral: R$ 440/mês\n
-💰 Anual: R$ 360/mês\n\n
-
-Pagamento: Cartão, PIX, boleto.\n
-
-✅Agente sua aula experimental:
-https://calendar.app.google/9r6mFZTPwUivm4x89`,
-
-
-  Modalidade_judo:
-`Judô 🥋 todos os dias às 21h (1h). Instrutor: *Sensei Jeferson* ` +
-`Mensalidade: R$ 150,00, ` +
-'Quer agendar uma aula experimental?\n' +
-'Acesse o link de agendamento: https://calendar.google.com/calendar/u/0/r/month/2025/9/24' +
-
-'1 Voltar ao menu principal\n' +
-'2 Estrutura da academia Crossfit Madala CF\n' +
-'4 Fala diretamente com instrutor de Judô\n' +``,
-
-  Eventos_madalacf:
-`*PROMOÇÕES ATIVAS* (exemplo — ajuste)
-Acesse nosso calendário de eventos e fique por dentro de tudo o que rola na Madala CF:\n +
-` +
-`https://calendar.google.com/calendar/u/0/r/month/2024/6/1`,
-
-  atendente:
-`Este é o contato do Tchê. 👩‍💻
-Seu genrente geral, pronto para te ajudar com qualquer dúvida ou suporte que precisar.\n +
-
-Contato Madala CF - Tchê
-https://wa.me/qr/LI5TG3DW5XAZF1 
-
-Envie um minuto para retorno.`,
-
-Redes_sociais:
-`*REDES SOCIAIS MADALA CF* 📱\n
-Siga a gente nas redes sociais e fique por dentro de todas as novidades, dicas de treino e muito mais!\n
-📸Instagram: https://www.instagram.com/madalacf/\n
-👍Facebook: https://www.facebook.com/madalacf\n
-▶️ YouTube: https://www.youtube.com/@madalacf\n
-🌐 Site: https://madalacf.com.br\n`,
-
-
-};
-
-// Helper para enviar o MENU com botões
-// ===================== HELPERS / ESTADO =====================
-const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
-
-
-
-const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
-
-// Card pós-Menu do CrossFit (texto-livre: Mais/Marcar/Menu/Sair)
 function cfPosMenu(nome='') {
   const n = firstName(nome);
   return `${n ? n + ', ' : ''}escolha uma opção (digite a palavra):
@@ -226,29 +93,72 @@ function cfPosMenu(nome='') {
 • *Sair*   → ❌ Encerrar`;
 }
 
+const RESPOSTAS = {
+  comoFunciona: `*COMO FUNCIONA O CROSSFIT?*
+• Treinos em grupo com coach supervisionando (todos os níveis).
+• Aula com aquecimento e técnica.
+• Escalas: Iniciante, Intermediário e Avançado.
+• Avaliação inicial para ajustar cargas e movimentos.
+• Abrimos de Seg a Sáb, das 6h às 21h.
 
-// ===================== MENU (LIST) ATUALIZADO =====================
-// Envia APENAS o List (sem duplicar com texto separado)
+📍 Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9
+
+Bora fazer uma aula teste? 💪
+✅ Agende sua aula experimental:
+https://calendar.app.google/9r6mFZTPwUivm4x89`,
+
+  planos: `*PLANOS E VALORES* (CrossFit premium)
+💰 Trimestral: R$ 510/mês
+💰 Semestral: R$ 440/mês
+💰 Anual: R$ 360/mês
+
+Formas de pagamento: Cartão, PIX, boleto.
+
+✅ Agende sua aula experimental:
+https://calendar.app.google/9r6mFZTPwUivm4x89`,
+
+  agendarCrossfit: `🗓️ *Agendar aula experimental de CrossFit*
+Escolha seu melhor horário pelo link:
+https://calendar.app.google/9r6mFZTPwUivm4x89`,
+
+  Modalidade_judo: `*Judô* 🥋
+• Aulas todos os dias às 21h (1h).
+• Instrutor: *Sensei Jeferson*.
+• Mensalidade: R$ 150,00.
+
+Quer agendar uma aula experimental?
+Acesse: https://calendar.google.com/calendar/u/0/r/month/2025/9/24`,
+
+  Eventos_madalacf: `*Eventos / Promoções*
+Fique por dentro do que rola na Madala CF:
+https://calendar.google.com/calendar/u/0/r/month/2024/6/1`,
+
+  atendente: `Este é o contato do *Tchê* (gerente geral) 👨‍💼
+Pronto para te ajudar com qualquer dúvida ou suporte.
+
+WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1
+
+Envie uma mensagem e aguarde um momento para retorno.`,  
+
+  Redes_sociais: `*REDES SOCIAIS MADALA CF* 📱
+📸 Instagram: https://www.instagram.com/madalacf/
+👍 Facebook:  https://www.facebook.com/madalacf
+▶️ YouTube:   https://www.youtube.com/@madalacf
+🌐 Site:      https://madalacf.com.br`
+};
+
+// ===== Estado simples por chat =====
+const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
+
+// ===== Menu (List) com fallback =====
 async function enviarMenu(msg, chat, nome) {
-  const first = v => (v ? String(v).trim().split(/\s+/)[0] : '');
-
-  const textoFallback = `Olá ${first(nome)}! 👋
-
-Bem-vinda à família *Madala CF* 💪
-Escolha uma opção (responda com o número):
-1 - 🏋️ Como funcionam as aulas de CrossFit
-2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.
-3 - 🌐 Redes sociais Madala CF
-4 - 🏆 Eventos Madala CF
-0 - ☎ Falar com Tchê (gerente geral)`;
-
   await typing(chat);
-  // 1) Sempre envia o fallback (garante funcionamento no Web/Desktop)
-  await client.sendMessage(msg.from, textoFallback);
 
-  // 2) Tenta enviar o List (aparece bem no celular)
+  // (1) Fallback em texto (funciona em qualquer dispositivo)
+  await client.sendMessage(msg.from, menuText(nome));
+
+  // (2) Tenta enviar o List (melhor UX no celular)
   try {
-    const body = `Toque em "Ver opções" no celular para abrir a lista.`;
     const sections = [{
       title: 'Menu principal',
       rows: [
@@ -259,14 +169,14 @@ Escolha uma opção (responda com o número):
         { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
       ],
     }];
-    const list = new List(body, 'Ver opções', sections, 'Madala CF', 'Se preferir, digite o número.');
+    const list = new List('Toque em "Ver opções" para abrir a lista.', 'Ver opções', sections, 'Madala CF', 'Ou digite o número aqui.');
     await client.sendMessage(msg.from, list);
   } catch (e) {
-    // Se o List não renderizar no dispositivo (ex.: Web), ignore:
-    console.warn('List não enviado (usando só fallback).', e?.message || e);
+    console.warn('List não enviado (seguindo apenas com o texto do menu).', e?.message || e);
   }
 }
-// ===================== ROUTER PRINCIPAL (UM ÚNICO LISTENER) =====================
+
+// ===== Router principal (UM ÚNICO listener) =====
 client.on('message', async (msg) => {
   try {
     // Ignora grupos/status
@@ -287,7 +197,7 @@ client.on('message', async (msg) => {
       asciiText = String(msg.selectedRowId).trim().toLowerCase();
     }
 
-    // Gatilho de saudação/menu → abre o menu inicial (List)
+    // Gatilho de saudação/menu → abre o menu inicial
     const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
     if (ehSaudacao) {
       estado[chatId] = 'MAIN';          // reseta estado
@@ -298,13 +208,13 @@ client.on('message', async (msg) => {
     // Estado atual
     const st = estado[chatId] || 'MAIN';
 
-    // ==================== MAIN (menu principal) ====================
+    // ===== MAIN (menu principal) =====
     if (st === 'MAIN') {
-      // 1) CrossFit → envia "Como funciona" e o pós-menu CF
+      // 1) CrossFit → "Como funciona" + pós-menu CF
       if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
         await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.comoFunciona); // seu card "como funciona"
-        await client.sendMessage(chatId, cfPosMenu(nome));        // pós-menu CF (Mais/Marcar/Menu/Sair)
+        await client.sendMessage(chatId, RESPOSTAS.comoFunciona);
+        await client.sendMessage(chatId, cfPosMenu(nome));
         estado[chatId] = 'CF_MENU';
         return;
       }
@@ -313,7 +223,7 @@ client.on('message', async (msg) => {
       if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
         await typing(chat);
         await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
-        await enviarMenu(msg, chat, nome); // reabre o menu principal após card
+        await enviarMenu(msg, chat, nome);
         return;
       }
 
@@ -348,21 +258,21 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // ==================== CF_MENU (pós-menu do CrossFit) ====================
+    // ===== CF_MENU (pós-menu do CrossFit) =====
     if (st === 'CF_MENU') {
       // "mais" → planos
-      if (asciiText === 'mais' || asciiText === 'planos' || asciiText === 'valores' || asciiText === 'precos' || asciiText === 'preços' || asciiText === 'Mais' || asciiText === 'Planos' || asciiText === 'Valores' || asciiText === 'Precos' || asciiText === 'Preços') {
+      if (['mais','planos','valores','precos','preços'].includes(asciiText)) {
         await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.planos); // ou planos_valores(nome)
+        await client.sendMessage(chatId, RESPOSTAS.planos);
         await client.sendMessage(chatId, cfPosMenu(nome));  // permanece no CF_MENU
         return;
       }
 
-      // "marcar" → link de agendamento (defina RESPOSTAS.agendarCrossfit)
-      if (asciiText === 'marcar' || asciiText === 'agendar' || asciiText === 'agendamento' || asciiText === 'Marcar' || asciiText === 'Agendar' || asciiText === 'Agendamento') {
+      // "marcar" → agendamento
+      if (['marcar','agendar','agendamento'].includes(asciiText)) {
         await typing(chat);
         await client.sendMessage(chatId, RESPOSTAS.agendarCrossfit);
-        await client.sendMessage(chatId,comoFunciona(nome));
+        await client.sendMessage(chatId, cfPosMenu(nome));
         return;
       }
 
@@ -390,14 +300,49 @@ client.on('message', async (msg) => {
   }
 });
 
-
-// Servidor simples para manter o bot ativo (útil em plataformas como Heroku)
-// health-check server
+// ===== EXPRESS / HEALTH / QR WEB =====
 const express = require('express');
 const app = express();
-app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
-app.listen(3000, () => console.log('Health-check na porta 3000'));
+
+const PORT = process.env.PORT || 3000;
+// proteja /qr com um token simples (defina QR_SECRET nas variáveis da Koyeb)
+const QR_SECRET = process.env.QR_SECRET || '';
+
+app.get('/', (_req, res) => {
+  res.type('text/html; charset=utf-8').send('🤖 Chatbot online!');
+});
+
+// Exibe o QR no navegador quando disponível
+// Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
+app.get('/qr', async (req, res) => {
+  try {
+    if (QR_SECRET && req.query.token !== QR_SECRET) {
+      return res.status(401).send('Não autorizado');
+    }
+    if (!latestQR) {
+      return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
+    }
+    const dataUrl = await QRCode.toDataURL(latestQR);
+    res.type('text/html; charset=utf-8').send(`
+      <!doctype html>
+      <html>
+        <head><meta charset="utf-8"><title>QR WhatsApp</title></head>
+        <body style="font-family:system-ui, sans-serif; text-align:center; padding:24px">
+          <h2>Escaneie no WhatsApp → Aparelhos conectados → Conectar um aparelho</h2>
+          <p>Gerado em: ${latestQRAt?.toLocaleString('pt-BR') || '-'}</p>
+          <img src="${dataUrl}" alt="QR WhatsApp" style="max-width:360px; width:100%; height:auto;"/>
+        </body>
+      </html>
+    `);
+  } catch (e) {
+    console.error('[QR_ROUTE_ERROR]', e);
+    res.status(500).send('Falha ao gerar/exibir o QR.');
+  }
+});
+
+app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
 module.exports = app;
 
+// Logs de erros não tratados
 process.on('unhandledRejection', (e) => console.error('UnhandledRejection:', e));
 process.on('uncaughtException', (e) => console.error('UncaughtException:', e));
