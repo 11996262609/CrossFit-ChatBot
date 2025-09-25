@@ -1,17 +1,24 @@
 // ===== Imports e estado do QR =====
+const express = require('express');
 const { Client, LocalAuth, List } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');                     // <— novo
-const puppeteer = require('puppeteer');       // <— novo
+const os = require('os');
+const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
 
 let latestQR = null;
 let latestQRAt = null;
 
+// ===== HTTP / Health-check & rotas de QR =====
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
+
 // ===== Perfil temporário cross-platform (evita "perfil em uso") =====
-const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile'); // ex.: C:\Users\...\AppData\Local\Temp\wwebjs_tmp_profile
+const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
 try {
   fs.rmSync(tmpProfile, { recursive: true, force: true });
   console.log('[Chromium] Perfil temporário limpo:', tmpProfile);
@@ -19,8 +26,34 @@ try {
   console.warn('[Chromium] Falha ao limpar perfil temporário:', e.message);
 }
 
-// ===== Criação do cliente WhatsApp =====.
- // ===== Criação do cliente WhatsApp =====
+// === Rotas para exibir o QR no navegador (úteis no Koyeb e local) ===
+app.get('/qr.svg', async (_req, res) => {
+  try {
+    if (!latestQR) return res.status(204).send(''); // já conectado
+    const svg = await QRCode.toString(latestQR, { type: 'svg', margin: 0 });
+    res.type('image/svg+xml').send(svg);
+  } catch (e) {
+    res.status(500).send('Falha ao gerar QR');
+  }
+});
+
+app.get('/qr', (_req, res) => {
+  if (!latestQR) {
+    return res.send('<h1>Já conectado ✅</h1><p>Nenhum QR ativo no momento.</p>');
+  }
+  res.send(`<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="5">
+<title>Escaneie o QR do WhatsApp</title>
+<h1>Escaneie com o app do WhatsApp</h1>
+<img src="/qr.svg" width="320" height="320" style="image-rendering: pixelated" />
+<p>Atualiza a cada 5s; esta página funciona em servidores como o Koyeb.</p>`);
+});
+
+// Inicia o servidor UMA vez
+app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
+
+// ===== Criação do cliente WhatsApp =====
 const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwebjs_auth');
 
 const client = new Client({
@@ -58,32 +91,9 @@ client.on('ready', () => {
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
 client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
 
-// === Rotas para exibir o QR no navegador (úteis no Koyeb e local) ===
-/** QR puro em SVG (No Content se já conectado) */
-app.get('/qr.svg', async (_req, res) => {
-  try {
-    if (!latestQR) return res.status(204).send(''); // já conectado
-    const svg = await QRCode.toString(latestQR, { type: 'svg', margin: 0 });
-    res.type('image/svg+xml').send(svg);
-  } catch (e) {
-    res.status(500).send('Falha ao gerar QR');
-  }
-});
+client.initialize();
 
-/** Página simples que autoatualiza o QR a cada 5s */
-app.get('/qr', (_req, res) => {
-  if (!latestQR) {
-    res.send('<h1>Já conectado ✅</h1><p>Nenhum QR ativo no momento.</p>');
-    return;
-  }
-  res.send(`<!doctype html>
-  <meta charset="utf-8">
-  <meta http-equiv="refresh" content="5">
-  <title>Escaneie o QR do WhatsApp</title>
-  <h1>Escaneie com o app do WhatsApp</h1>
-  <img src="/qr.svg" width="320" height="320" style="image-rendering: pixelated" />
-  <p>Atualiza a cada 5s; esta página funciona em servidores como o Koyeb.</p>`);
-});
+module.exports = app;
 
 
 // ===== Inicializa o WhatsApp =====
@@ -327,16 +337,16 @@ client.on('message', async (msg) => {
 });
 
 // ===== EXPRESS / HEALTH / QR WEB =====
-const express = require('express');
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-// proteja /qr com um token simples (defina QR_SECRET nas variáveis da Koyeb)
 const QR_SECRET = process.env.QR_SECRET || '';
 
-app.get('/', (_req, res) => {
-  res.type('text/html; charset=utf-8').send('🤖 Chatbot online!');
-});
+function checkQrAuth(req, res, next) {
+  if (!QR_SECRET) return next(); // se não definir QR_SECRET, libera acesso
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const token = req.query.token || req.headers['x-qr-token'] || bearer;
+  if (token === QR_SECRET) return next();
+  return res.status(401).send('Unauthorized');
+}
+
 
 // Exibe o QR no navegador quando disponível
 // Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
