@@ -1,84 +1,48 @@
-// ===== Imports e estado do QR =====
-const express = require('express');
-const { Client, LocalAuth, List } = require('whatsapp-web.js');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const puppeteer = require('puppeteer');
-const QRCode = require('qrcode');
-const qrcodeTerminal = require('qrcode-terminal');
-
-let latestQR = null;
-let latestQRAt = null;
-
-// ===== HTTP / Health-check & rotas de QR =====
-// util p/ evitar cache
-const noCache = (res) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  res.set('Surrogate-Control', 'no-store');
-};
-
-// QR puro em SVG (imagem apenas)
-app.get('/qr.svg', async (_req, res) => {
-  try {
-    if (!latestQR) return res.status(204).end(); // já conectado
-    noCache(res);
-    const svg = await QRCode.toString(latestQR, {
-      type: 'svg',
-      width: 360,
-      margin: 4,
-      errorCorrectionLevel: 'M'
-    });
-    res.type('image/svg+xml').send(svg);
-  } catch {
-    res.status(500).send('Falha ao gerar QR');
-  }
-});
-
-// QR puro em PNG (imagem apenas)
-app.get('/qr.png', async (_req, res) => {
-  try {
-    if (!latestQR) return res.status(204).end();
-    noCache(res);
-    const buf = await QRCode.toBuffer(latestQR, {
-      type: 'png',
-      width: 360,
-      margin: 4,
-      errorCorrectionLevel: 'M'
-    });
-    res.type('image/png').send(buf);
-  } catch {
-    res.status(500).send('Falha ao gerar QR');
-  }
-});
-
-// Página em branco só com o QR (fullscreen, auto-refresh)
-app.get('/qr-plain', (_req, res) => {
-  if (!latestQR) return res.send('<!doctype html><meta charset="utf-8"><style>body{font-family:sans-serif}</style><h1>Já conectado ✅</h1>');
-  noCache(res);
-  res.type('html').send(`<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="5">
-<title>QR do WhatsApp</title>
-<style>
-  html,body{height:100%;margin:0;background:#fff}
-  .wrap{display:flex;align-items:center;justify-content:center;height:100%}
-  img{max-width:92vmin;max-height:92vmin;image-rendering:pixelated}
-</style>
-<div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
-});
-
-
-
-client.initialize();
-
+// exporta o app (se necessário)
 module.exports = app;
 
+// ===== WhatsApp Web.js (perfil temporário + cliente) =====
+const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
+try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch {}
 
-// ===== Inicializa o WhatsApp =====
+const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwebjs_auth');
+
+const client = new Client({
+  authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
+  puppeteer: {
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--no-first-run',
+      '--no-default-browser-check',
+      `--user-data-dir=${tmpProfile}`
+    ],
+    timeout: 90000
+  }
+});
+
+// ===== Listeners =====
+client.on('qr', (qr) => {
+  latestQR = qr;
+  latestQRAt = new Date();
+  console.log('[QR] Aguardando leitura...');
+  try { qrcodeTerminal.generate(qr, { small: true }); } catch {}
+});
+
+client.on('ready', () => {
+  console.log('[READY] WhatsApp conectado');
+  latestQR = null;
+});
+
+client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
+client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
+
+// ===== Inicializa (APENAS UMA VEZ) =====
 client.initialize();
 
 // ===== Utils =====
