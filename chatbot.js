@@ -1,9 +1,62 @@
-// exporta o app (se necessário)
-module.exports = app;
+// 1) IMPORTS
+const express = require('express');
+const { Client, LocalAuth, List } = require('whatsapp-web.js');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const puppeteer = require('puppeteer');
+const QRCode = require('qrcode');
+const qrcodeTerminal = require('qrcode-terminal');
 
-// ===== WhatsApp Web.js (perfil temporário + cliente) =====
+// 2) ESTADO
+let latestQR = null;
+let latestQRAt = null;
+
+// 3) EXPRESS: app + rotas + listen
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
+
+const noCache = (res) => {
+  res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma','no-cache'); res.set('Expires','0'); res.set('Surrogate-Control','no-store');
+};
+
+app.get('/qr.svg', async (_req, res) => {
+  try {
+    if (!latestQR) return res.status(204).end();
+    noCache(res);
+    const svg = await QRCode.toString(latestQR, { type:'svg', width:360, margin:4, errorCorrectionLevel:'M' });
+    res.type('image/svg+xml').send(svg);
+  } catch { res.status(500).send('Falha ao gerar QR'); }
+});
+
+app.get('/qr.png', async (_req, res) => {
+  try {
+    if (!latestQR) return res.status(204).end();
+    noCache(res);
+    const buf = await QRCode.toBuffer(latestQR, { type:'png', width:360, margin:4, errorCorrectionLevel:'M' });
+    res.type('image/png').send(buf);
+  } catch { res.status(500).send('Falha ao gerar QR'); }
+});
+
+app.get('/qr-plain', (_req, res) => {
+  if (!latestQR) return res.send('<!doctype html><meta charset="utf-8"><h1>Já conectado ✅</h1>');
+  noCache(res);
+  res.type('html').send(`<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="5"><title>QR do WhatsApp</title>
+<style>html,body{height:100%;margin:0;background:#fff}.wrap{display:flex;align-items:center;justify-content:center;height:100%}img{max-width:92vmin;max-height:92vmin;image-rendering:pixelated}</style>
+<div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
+});
+
+// **APENAS UMA** vez:
+app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
+
+// 4) WHATSAPP WEB.JS: perfil tempor., DATA_PATH, client, listeners, initialize
 const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
-try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(tmpProfile, { recursive:true, force:true }); } catch {}
 
 const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwebjs_auth');
 
@@ -12,38 +65,25 @@ const client = new Client({
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--no-first-run',
-      '--no-default-browser-check',
-      `--user-data-dir=${tmpProfile}`
-    ],
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote','--no-first-run','--no-default-browser-check', `--user-data-dir=${tmpProfile}`],
     timeout: 90000
   }
 });
 
-// ===== Listeners =====
 client.on('qr', (qr) => {
   latestQR = qr;
   latestQRAt = new Date();
   console.log('[QR] Aguardando leitura...');
-  try { qrcodeTerminal.generate(qr, { small: true }); } catch {}
+  try { qrcodeTerminal.generate(qr, { small:true }); } catch {}
 });
 
-client.on('ready', () => {
-  console.log('[READY] WhatsApp conectado');
-  latestQR = null;
-});
-
+client.on('ready', () => { console.log('[READY] WhatsApp conectado'); latestQR = null; });
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
 client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
 
-// ===== Inicializa (APENAS UMA VEZ) =====
+// **APENAS UMA** vez:
 client.initialize();
+
 
 // ===== Utils =====
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -322,8 +362,6 @@ app.get('/qr', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
-module.exports = app;
 
 // Logs de erros não tratados
 process.on('unhandledRejection', (e) => console.error('UnhandledRejection:', e));
