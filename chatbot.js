@@ -2,34 +2,32 @@
 const { Client, LocalAuth, List } = require('whatsapp-web.js');
 const fs = require('fs');
 const path = require('path');
-const QRCode = require('qrcode');              // p/ gerar imagem do QR (DataURL)
-const qrcodeTerminal = require('qrcode-terminal'); // p/ mostrar o QR no log
+const os = require('os');                     // <— novo
+const puppeteer = require('puppeteer');       // <— novo
+const QRCode = require('qrcode');
+const qrcodeTerminal = require('qrcode-terminal');
 
-let latestQR = null;     // último QR recebido (p/ /qr)
-let latestQRAt = null;   // quando foi gerado
+let latestQR = null;
+let latestQRAt = null;
 
-// ===== Limpeza de locks do Chromium (evita "perfil em uso") =====
+// ===== Perfil temporário cross-platform (evita "perfil em uso") =====
+const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile'); // ex.: C:\Users\...\AppData\Local\Temp\wwebjs_tmp_profile
 try {
-  // perfil efêmero que vamos usar a cada boot
-  fs.rmSync('/tmp/chrome-data', { recursive: true, force: true });
-
-  // locks do perfil padrão do Chromium
-  const cfg = path.join(process.env.HOME || '/root', '.config', 'chromium');
-  ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
-    const p = path.join(cfg, f);
-    if (fs.existsSync(p)) fs.rmSync(p, { force: true });
-  });
-  console.log('[Chromium] Locks limpos (se existiam).');
+  fs.rmSync(tmpProfile, { recursive: true, force: true });
+  console.log('[Chromium] Perfil temporário limpo:', tmpProfile);
 } catch (e) {
-  console.warn('[Chromium] Falha ao limpar locks:', e.message);
+  console.warn('[Chromium] Falha ao limpar perfil temporário:', e.message);
 }
 
-// ===== Criação do cliente WhatsApp =====
+// ===== Criação do cliente WhatsApp =====.
+ // ===== Criação do cliente WhatsApp =====
+const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwebjs_auth');
+
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // sessão persiste no volume
+  authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }), // sessão persiste
   puppeteer: {
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -38,8 +36,7 @@ const client = new Client({
       '--no-zygote',
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-features=TranslateUI',
-      '--user-data-dir=/tmp/chrome-data' // perfil efêmero por execução
+      `--user-data-dir=${tmpProfile}` // perfil efêmero
     ],
     timeout: 90000
   }
@@ -55,11 +52,39 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
   console.log('[READY] WhatsApp conectado (Madala CF)');
-  latestQR = null; // limpa ao conectar
+  latestQR = null;
 });
 
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
 client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
+
+// === Rotas para exibir o QR no navegador (úteis no Koyeb e local) ===
+/** QR puro em SVG (No Content se já conectado) */
+app.get('/qr.svg', async (_req, res) => {
+  try {
+    if (!latestQR) return res.status(204).send(''); // já conectado
+    const svg = await QRCode.toString(latestQR, { type: 'svg', margin: 0 });
+    res.type('image/svg+xml').send(svg);
+  } catch (e) {
+    res.status(500).send('Falha ao gerar QR');
+  }
+});
+
+/** Página simples que autoatualiza o QR a cada 5s */
+app.get('/qr', (_req, res) => {
+  if (!latestQR) {
+    res.send('<h1>Já conectado ✅</h1><p>Nenhum QR ativo no momento.</p>');
+    return;
+  }
+  res.send(`<!doctype html>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="5">
+  <title>Escaneie o QR do WhatsApp</title>
+  <h1>Escaneie com o app do WhatsApp</h1>
+  <img src="/qr.svg" width="320" height="320" style="image-rendering: pixelated" />
+  <p>Atualiza a cada 5s; esta página funciona em servidores como o Koyeb.</p>`);
+});
+
 
 // ===== Inicializa o WhatsApp =====
 client.initialize();
@@ -68,6 +93,7 @@ client.initialize();
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
+
 
 // ===== Cards / Textos =====
 const menuText = (nome = '') => 

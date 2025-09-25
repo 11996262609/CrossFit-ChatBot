@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-error.log
+*.log
+.DS_Store
+
+.wwebjs_auth
+.wwebjs_cache
+.env

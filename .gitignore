@@ -1,3 +1,11 @@
 node_modules/
 .wwebjs_auth/
-npm-debug.log
+.wwebjs_cache/
+.env
+.eslintcache
+*.tsbuildinfo
+*.pem
+*.key
+*.crt
+.next/
+.expo/

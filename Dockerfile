@@ -1,45 +1,29 @@
-# ---- Build env
-FROM node:18-slim
+FROM node:20-bullseye
 
-# 1) Dependências do Chromium
+# Dependências necessárias para Chrome headless
 RUN apt-get update && apt-get install -y \
-    chromium \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libxtst6 \
-    libxcursor1 \
-    ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+  libcups2 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 \
+  libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 \
+  libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxshmfence1 libxtst6 \
+  wget xdg-utils && rm -rf /var/lib/apt/lists/*
 
-# 2) Aponta o path do Chromium para o puppeteer-core usado pelo whatsapp-web.js
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-# 3) Diretório do app
 WORKDIR /app
 
-# 4) Instala só deps
+# Instala somente dependências (produção)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
-# 5) Copia código
+# Baixa o Chrome gerenciado pelo Puppeteer (compatível)
+RUN npx puppeteer browsers install chrome
+
+# Copia o código
 COPY . .
 
-# 6) Porta do health-check
-EXPOSE 3000
+ENV NODE_ENV=production
+ENV PORT=3000
+# Caminho que vamos montar como volume para persistir a sessão do WhatsApp
+ENV WWEBJS_DATA_PATH=/data/wwebjs_auth
 
-# 7) Start
-CMD ["npm", "start"]
+EXPOSE 3000
+CMD ["node","chatbot.js"]
