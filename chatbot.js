@@ -16,31 +16,77 @@ let latestQRAt = null;
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.get('/', (_req, res) => res.send('🤖 Chatbot online!'));
-
+// helper de no-cache
 const noCache = (res) => {
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma','no-cache'); res.set('Expires','0'); res.set('Surrogate-Control','no-store');
+  res.set('Pragma','no-cache');
+  res.set('Expires','0');
+  res.set('Surrogate-Control','no-store');
 };
 
+// Home: sempre mostra “Chatbot online!” e, se houver QR, renderiza ao lado
+app.get('/', (_req, res) => {
+  const hasQR = Boolean(latestQR);
+  if (hasQR) noCache(res);
+  const refresh = hasQR ? '<meta http-equiv="refresh" content="5">' : '';
+  const rightCol = hasQR ? '<img src="/qr.png" alt="QR WhatsApp" />' : '';
+  const info = hasQR ? 'Escaneie o QR para conectar ao WhatsApp.' : 'Já conectado ao WhatsApp ✅';
+  const links = hasQR
+    ? 'Prefere <a href="/qr-plain" target="_blank">tela cheia</a> ou <a href="/qr.svg" target="_blank">SVG</a>?'
+    : 'Se desconectar, um novo QR aparecerá aqui automaticamente.';
+
+  res.type('html').send(`<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+${refresh}
+<title>Chatbot online</title>
+<style>
+  :root { --pad: 24px; }
+  html,body{height:100%;margin:0;background:#fff;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .page{min-height:100%;display:flex;align-items:center;justify-content:center;padding:var(--pad)}
+  .card{display:grid;gap:16px;grid-template-columns: 1fr ${hasQR ? 'auto' : '1fr'};align-items:center;max-width:980px;width:100%}
+  h1{margin:0 0 8px 0;font-size:28px}
+  p{margin:8px 0 0 0}
+  img{width:360px;height:360px;image-rendering:pixelated}
+  .links{opacity:.75;margin-top:8px}
+</style>
+<div class="page">
+  <div class="card">
+    <div>
+      <h1>🤖 Chatbot online!</h1>
+      <p>${info}</p>
+      <p class="links">${links}</p>
+    </div>
+    ${rightCol}
+  </div>
+</div>`);
+});
+
+// QR puro em SVG
 app.get('/qr.svg', async (_req, res) => {
   try {
     if (!latestQR) return res.status(204).end();
     noCache(res);
     const svg = await QRCode.toString(latestQR, { type:'svg', width:360, margin:4, errorCorrectionLevel:'M' });
     res.type('image/svg+xml').send(svg);
-  } catch { res.status(500).send('Falha ao gerar QR'); }
+  } catch {
+    res.status(500).send('Falha ao gerar QR');
+  }
 });
 
+// QR puro em PNG
 app.get('/qr.png', async (_req, res) => {
   try {
     if (!latestQR) return res.status(204).end();
     noCache(res);
     const buf = await QRCode.toBuffer(latestQR, { type:'png', width:360, margin:4, errorCorrectionLevel:'M' });
     res.type('image/png').send(buf);
-  } catch { res.status(500).send('Falha ao gerar QR'); }
+  } catch {
+    res.status(500).send('Falha ao gerar QR');
+  }
 });
 
+// Página fullscreen com auto-refresh
 app.get('/qr-plain', (_req, res) => {
   if (!latestQR) return res.send('<!doctype html><meta charset="utf-8"><h1>Já conectado ✅</h1>');
   noCache(res);
@@ -65,7 +111,11 @@ const client = new Client({
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote','--no-first-run','--no-default-browser-check', `--user-data-dir=${tmpProfile}`],
+    args: [
+      '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
+      '--disable-gpu','--no-zygote','--no-first-run','--no-default-browser-check',
+      `--user-data-dir=${tmpProfile}`
+    ],
     timeout: 90000
   }
 });
