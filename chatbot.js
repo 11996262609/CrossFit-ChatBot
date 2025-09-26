@@ -231,6 +231,7 @@ https://calendar.google.com/calendar/u/0/r/month/2024/6/1`,
 
 
 
+
 atendente: `Este é o contato do *Tchê* (gerente-geral) 👨‍💼\n
 ${(typeof n !== 'undefined' && n) ? `${n}, ` : ''}Pronto para te ajudar com qualquer dúvida ou suporte.\n\n
 
@@ -320,7 +321,7 @@ async function enviarMenu(msg, chat, nome) {
                   if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
                     await typing(chat);
                     await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
-                    await cfPosMenu(msg, chat, nome);
+                    await enviarMenu(msg, chat, nome);
                     return;
                   }
 
@@ -328,7 +329,7 @@ async function enviarMenu(msg, chat, nome) {
                   if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
                     await typing(chat);
                     await client.sendMessage(chatId, RESPOSTAS.Redes_sociais);
-                    await cfPosMenu(msg, chat, nome);
+                    await enviarMenu(msg, chat, nome);
                     return;
                   }
 
@@ -336,7 +337,7 @@ async function enviarMenu(msg, chat, nome) {
                   if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
                     await typing(chat);
                     await client.sendMessage(chatId, RESPOSTAS.Eventos_madalacf);
-                    await cfPosMenu(msg, chat, nome);
+                    await enviarMenu(msg, chat, nome);
                     return;
                   }
 
@@ -344,14 +345,14 @@ async function enviarMenu(msg, chat, nome) {
                   if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
                     await typing(chat);
                     await client.sendMessage(chatId, RESPOSTAS.atendente);
-                    await cfPosMenu(msg, chat, nome);
+                    await enviarMenu(msg, chat, nome);
                     return;
                   }
 
                   // Fallback no MAIN
                   await typing(chat);
                   await client.sendMessage(chatId, 'Não entendi. Toque em "Ver opções" ou digite *menu* para abrir o menu.');
-                  await cfPosMenu(msg, chat, nome);
+                  await enviarMenu(msg, chat, nome);
                   return;
                 }
 
