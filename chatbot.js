@@ -166,6 +166,24 @@ function cfPosMenu(nome = '') {
 • *Sair*   → ❌ Encerrar conversa`;
 }
 
+function menu_rápido(nome = '') {
+  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
+  const prefixo = n ? `${n}, ` : '';
+  return `${prefixo}Escolha uma opção (digite a palavra):
+• *Menu*   → 🔙 Voltar ao menu inicial
+• *Sair*   → ❌ Encerrar conversa`;
+}
+
+
+function menu_agendamento(nome = '') {
+  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
+  const prefixo = n ? `${n}, ` : '';
+  return `${prefixo}Escolha uma opção (digite a palavra):
+• *Marcar* → 🗓️ Agendar sua aula experimental
+• *Menu*   → 🔙 Voltar ao menu inicial
+• *Sair*   → ❌ Encerrar conversa`;
+}
+
 
 const RESPOSTAS = {
   comoFunciona: (nome = '') => {
@@ -304,53 +322,110 @@ client.on('message', async (msg) => {
 
     // ===== MAIN (menu principal) =====
     if (st === 'MAIN') {
-      // 1) CrossFit → "Como funciona" + pós-menu CF
-// 1) CrossFit → "Como funciona" + pós-menu CF
-if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
-  await typing(chat);
-  const msgComoFunciona = (typeof RESPOSTAS.comoFunciona === 'function')
-    ? RESPOSTAS.comoFunciona(nome)
-    : RESPOSTAS.comoFunciona;
+      
+                        // 1) CrossFit → "Como funciona" + pós-menu C
+                        if (/^\s*mais\b/.test(lowerText)) {
+                          await typing(chat);
+                          const planosMsg = (typeof RESPOSTAS?.planos === 'function') ? RESPOSTAS.planos(nome) : RESPOSTAS.planos;
+                          if (planosMsg) await client.sendMessage(chatId, planosMsg);
 
-  await client.sendMessage(chatId, msgComoFunciona);
-  await client.sendMessage(chatId, cfPosMenu(nome)); // mostra o pós-menu CF apenas aqui
-  estado[chatId] = 'CF_MENU';
-  return;
-}
+                          await typing(chat);
+                          const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+                          if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
+                          return;
+                        } else if (/^\s*marcar\b/.test(lowerText)) {
+                          await typing(chat);
+                          const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+                          if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
+                          return;
+                        // menu/sair se quiser:
+                        } else if (/^\s*menu\b/.test(lowerText)) {
+                          await typing(chat);
+                          await client.sendMessage(chatId, menu_rápido(nome)); // ou menu_rápido('')
+                          return;
+                        } else if (/^\s*sair\b/.test(lowerText)) {
+                          await typing(chat);
+                          await client.sendMessage(chatId, 'Ok! Conversa encerrada. 👋');
+                          return;
+                        }
 
+                        // --- Depois as opções de conteúdo/números ---
+                        else if (
+                          asciiText === '1' ||
+                          lowerText.startsWith('1 - 🏋️') ||
+                          /\bcomo funciona\b/.test(lowerText)
+                        ) {
+                          await typing(chat);
+                          const msgComoFunciona = (typeof RESPOSTAS?.comoFunciona === 'function')
+                            ? RESPOSTAS.comoFunciona(nome)
+                            : RESPOSTAS.comoFunciona;
+                          if (msgComoFunciona) await client.sendMessage(chatId, msgComoFunciona);
 
+                          await typing(chat);
+                          await client.sendMessage(chatId, cfPosMenu(nome));
+                          return;
+                        }
 
-      // 2) Judô
-      if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
-        await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
-        await enviarMenu(msg, chat, nome);
-        return;
-      }
+                        // 2) Judô
+                        if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
+                          await typing(chat);
 
-      // 3) Redes sociais
-      if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
-        await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.Redes_sociais);
-        await enviarMenu(msg, chat, nome);
-        return;
-      }
+                          const judoMsg = (typeof RESPOSTAS?.Modalidade_judo === 'function')
+                            ? RESPOSTAS.Modalidade_judo(nome)
+                            : RESPOSTAS.Modalidade_judo;
 
-      // 4) Eventos
-      if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
-        await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.Eventos_madalacf);
-        await enviarMenu(msg, chat, nome);
-        return;
-      }
+                          if (judoMsg) await client.sendMessage(chatId, judoMsg);
 
-      // 0) Atendente
-      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
-        await typing(chat);
-        await client.sendMessage(chatId, RESPOSTAS.atendente);
-        await enviarMenu(msg, chat, nome);
-        return;
-      }
+                          await typing(chat);
+                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
+                          return;
+                        }
+
+                        // 3) Redes sociais
+                        if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
+                          await typing(chat);
+
+                          const redesMsg = (typeof RESPOSTAS?.Redes_sociais === 'function')
+                            ? RESPOSTAS.Redes_sociais(nome)
+                            : RESPOSTAS.Redes_sociais;
+
+                          if (redesMsg) await client.sendMessage(chatId, redesMsg);
+
+                          await typing(chat);
+                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
+                          return;
+                        }
+
+                        // 4) Eventos
+                        if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
+                          await typing(chat);
+
+                          const eventosMsg = (typeof RESPOSTAS?.Eventos_madalacf === 'function')
+                            ? RESPOSTAS.Eventos_madalacf(nome)
+                            : RESPOSTAS.Eventos_madalacf;
+
+                          if (eventosMsg) await client.sendMessage(chatId, eventosMsg);
+
+                          await typing(chat);
+                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
+                          return;
+                        }
+
+                        // 0) Atendente
+                        if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
+                          await typing(chat);
+
+                          const atendenteMsg = (typeof RESPOSTAS?.atendente === 'function')
+                            ? RESPOSTAS.atendente(nome)
+                            : RESPOSTAS.atendente;
+
+                          if (atendenteMsg) await client.sendMessage(chatId, atendenteMsg);
+
+                          await typing(chat);
+                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
+                          return;
+                        }
+
 
       // Fallback no MAIN
       await typing(chat);
