@@ -308,16 +308,16 @@ client.on('message', async (msg) => {
 // 1) CrossFit → "Como funciona" + pós-menu CF
 if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
   await typing(chat);
-
   const msgComoFunciona = (typeof RESPOSTAS.comoFunciona === 'function')
-    ? RESPOSTAS.comoFunciona(nome)   // INVOCAR a função
-    : RESPOSTAS.comoFunciona;        // compatível se ainda for string
+    ? RESPOSTAS.comoFunciona(nome)
+    : RESPOSTAS.comoFunciona;
 
   await client.sendMessage(chatId, msgComoFunciona);
-  await client.sendMessage(chatId, cfPosMenu(nome));
+  await client.sendMessage(chatId, cfPosMenu(nome)); // mostra o pós-menu CF apenas aqui
   estado[chatId] = 'CF_MENU';
   return;
 }
+
 
 
       // 2) Judô
