@@ -218,8 +218,6 @@ Venha${(typeof n !== 'undefined' && n) ? `, ${n},` : ''} aprender judô com o *S
 \n\nQuer sentir a energia do tatame? 💥\n
 ✅ Agende sua aula experimental:\nhttps://calendar.google.com/calendar/u/0/r/month/2025/9/24`,
 
-
-
 Eventos_madalacf: `*Eventos*\nFique por dentro${(typeof n !== 'undefined' && n) ? `, ${n},` : ''} do que rola na Madala CF:\n\n
 • Torneios internos e abertos (CrossFit e Judô).
 • Workshops e palestras com profissionais renomados.
@@ -228,8 +226,6 @@ Eventos_madalacf: `*Eventos*\nFique por dentro${(typeof n !== 'undefined' && n) 
 Participe e fortaleça nossa comunidade! 🤝\n
 📅 Mais detalhes e inscrições no link:\n
 https://calendar.google.com/calendar/u/0/r/month/2024/6/1`,
-
-
 
 
 atendente: `Este é o contato do *Tchê* (gerente-geral) 👨‍💼\n
@@ -256,105 +252,112 @@ async function enviarMenu(msg, chat, nome) {
   await client.sendMessage(msg.from, menuText(nome));
 
   // (2) Tenta enviar o List (melhor UX no celular)
-        try {
-          const sections = [{
-            title: 'Menu principal',
-            rows: [
-              { id: '1', title: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
-              { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.' },
-              { id: '3', title: '3 - 🌐 Redes sociais Madala CF' },
-              { id: '4', title: '4 - 🏆 Eventos Madala CF' },
-              { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
-            ],
-          }];
-          const list = new List('Toque em "Ver opções" para abrir a lista.', 'Ver opções', sections, 'Madala CF', 'Ou digite o número aqui.');
-          await client.sendMessage(msg.from, list);
-        } catch (e) {
-          console.warn('List não enviado (seguindo apenas com o texto do menu).', e?.message || e);
-        }
+  try {
+    const sections = [{
+      title: 'Menu principal',
+      rows: [
+        { id: '1', title: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
+        { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.' },
+        { id: '3', title: '3 - 🌐 Redes sociais Madala CF' },
+        { id: '4', title: '4 - 🏆 Eventos Madala CF' },
+        { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
+      ],
+    }];
+    const list = new List('Toque em "Ver opções" para abrir a lista.', 'Ver opções', sections, 'Madala CF', 'Ou digite o número aqui.');
+    await client.sendMessage(msg.from, list);
+  } catch (e) {
+    console.warn('List não enviado (seguindo apenas com o texto do menu).', e?.message || e);
+  }
+}
+
+// ===== Router principal (UM ÚNICO listener) =====
+client.on('message', async (msg) => {
+  try {
+    // Ignora grupos/status
+    if (!msg.from.endsWith('@c.us')) return;
+
+    const chat    = await msg.getChat();
+    const contact = await msg.getContact();
+    const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
+    const chatId  = msg.from;
+
+    // Normalização
+    const rawText   = (msg.body || '').toString().trim();
+    const lowerText = rawText.toLowerCase();
+    let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Se a mensagem for resposta de List, use o id da linha para rotear (fica '1','2','3','4','0')
+    if (msg.type === 'list_response' && msg.selectedRowId) {
+      asciiText = String(msg.selectedRowId).trim().toLowerCase();
+    }
+
+    // Gatilho de saudação/menu → abre o menu inicial
+    const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
+    if (ehSaudacao) {
+      estado[chatId] = 'MAIN';          // reseta estado
+      await enviarMenu(msg, chat, nome);
+      return;
+    }
+
+    // Estado atual
+    const st = estado[chatId] || 'MAIN';
+
+    // ===== MAIN (menu principal) =====
+    if (st === 'MAIN') {
+      // 1) CrossFit → "Como funciona" + pós-menu CF
+// 1) CrossFit → "Como funciona" + pós-menu CF
+if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
+  await typing(chat);
+
+  const msgComoFunciona = (typeof RESPOSTAS.comoFunciona === 'function')
+    ? RESPOSTAS.comoFunciona(nome)   // INVOCAR a função
+    : RESPOSTAS.comoFunciona;        // compatível se ainda for string
+
+  await client.sendMessage(chatId, msgComoFunciona);
+  await client.sendMessage(chatId, cfPosMenu(nome));
+  estado[chatId] = 'CF_MENU';
+  return;
+}
+
+
+      // 2) Judô
+      if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
+        await enviarMenu(msg, chat, nome);
+        return;
       }
 
-        // ===== Router principal (UM ÚNICO listener) =====
-        client.on('message', async (msg) => {
-          try {
-            // Ignora grupos/status
-            if (!msg.from.endsWith('@c.us')) return;
+      // 3) Redes sociais
+      if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.Redes_sociais);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
 
-            const chat    = await msg.getChat();
-            const contact = await msg.getContact();
-            const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
-            const chatId  = msg.from;
+      // 4) Eventos
+      if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.Eventos_madalacf);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
 
-            // Normalização
-            const rawText   = (msg.body || '').toString().trim();
-            const lowerText = rawText.toLowerCase();
-            let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      // 0) Atendente
+      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
+        await typing(chat);
+        await client.sendMessage(chatId, RESPOSTAS.atendente);
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
 
-            // Se a mensagem for resposta de List, use o id da linha para rotear (fica '1','2','3','4','0')
-            if (msg.type === 'list_response' && msg.selectedRowId) {
-              asciiText = String(msg.selectedRowId).trim().toLowerCase();
-            }
-
-            // Gatilho de saudação/menu → abre o menu inicial
-            const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
-            if (ehSaudacao) {
-              estado[chatId] = 'MAIN';          // reseta estado
-              await enviarMenu(msg, chat, nome);
-              return;
-            }
-
-              // Estado atual
-              const st = estado[chatId] || 'MAIN';
-
-                // ===== MAIN (menu principal) =====
-                if (st === 'MAIN') {
-                  // 1) CrossFit → "Como funciona" + pós-menu CF
-                  if (asciiText === '1' || lowerText.startsWith('1 - 🏋️')) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.comoFunciona);
-                    await client.sendMessage(chatId, cfPosMenu(nome));
-                    estado[chatId] = 'CF_MENU';
-                    return;
-                  }
-
-                  // 2) Judô
-                  if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.Modalidade_judo);
-                    await enviarMenu(msg, chat, nome);
-                    return;
-                  }
-
-                  // 3) Redes sociais
-                  if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.Redes_sociais);
-                    await enviarMenu(msg, chat, nome);
-                    return;
-                  }
-
-                  // 4) Eventos
-                  if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.Eventos_madalacf);
-                    await enviarMenu(msg, chat, nome);
-                    return;
-                  }
-
-                  // 0) Atendente
-                  if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.atendente);
-                    await enviarMenu(msg, chat, nome);
-                    return;
-                  }
-
-                  // Fallback no MAIN
-                  await typing(chat);
-                  await client.sendMessage(chatId, 'Não entendi. Toque em "Ver opções" ou digite *menu* para abrir o menu.');
-                  await enviarMenu(msg, chat, nome);
-                  return;
-                }
+      // Fallback no MAIN
+      await typing(chat);
+      await client.sendMessage(chatId, 'Não entendi. Toque em "Ver opções" ou digite *menu* para abrir o menu.');
+      await enviarMenu(msg, chat, nome);
+      return;
+    }
 
                   // ===== CF_MENU (pós-menu do CrossFit) =====
                   if (st === 'CF_MENU') {
@@ -387,75 +390,78 @@ async function enviarMenu(msg, chat, nome) {
                     return;
                   }
 
-                  // "menu"/"inicio" → volta ao menu inicial
-                  if (['menu', 'menu inicial', 'menu principal',
-                      'inicio', 'tela inicial', 'pagina inicial', 'home',
-                      'voltar ao menu', 'voltar pro menu', 'voltar p menu', 'voltar p/ menu', 'voltar menu',
-                      'retornar ao menu', 'retornar pro menu',
-                      'voltar ao inicio', 'voltar pro inicio', 'voltar p/ inicio', 'voltar p inicio',
-                      'ir para o menu', 'ir ao menu', 'menu por favor',
-                      '/menu', '/start', 'start', 'back'].includes(asciiText)) {
-                    estado[chatId] = 'MAIN';
-                    await enviarMenu(msg, chat, nome);
-                    return;
-                  }
+      // "menu"/"inicio" → volta ao menu inicial
+      if ([  'menu', 'menu inicial', 'menu principal',
+  'inicio', 'tela inicial', 'pagina inicial', 'home',
+  'voltar ao menu', 'voltar pro menu', 'voltar p menu', 'voltar p/ menu', 'voltar menu',
+  'retornar ao menu', 'retornar pro menu',
+  'voltar ao inicio', 'voltar pro inicio', 'voltar p/ inicio', 'voltar p inicio',
+  'ir para o menu', 'ir ao menu', 'menu por favor',
+  '/menu', '/start', 'start', 'back'
+].includes(asciiText)) {
+        estado[chatId] = 'MAIN';
+        await enviarMenu(msg, chat, nome);
+        return;
+      }
 
-                  // "sair" → encerra (reseta estado)
-                  if (asciiText === 'sair') {
-                    await client.sendMessage(chatId, 'Até logo! 👋');
-                    estado[chatId] = 'MAIN';
-                    return;
-                  }
+      // "sair" → encerra (reseta estado)
+      if (asciiText === 'sair') {
+        await client.sendMessage(chatId, 'Até logo! 👋');
+        estado[chatId] = 'MAIN';
+        return;
+      }
 
-                  // Fallback no CF_MENU
-                await client.sendMessage(chatId, cfPosMenu(nome));
-                return;
-              }
+      // Inválido no CF_MENU → reexibe instruções
+      await client.sendMessage(chatId, cfPosMenu(nome));
+      return;
+    }
 
-            } catch (err) {
-              console.error('Erro no processamento da mensagem:', err);
-            }
-          });
+  } catch (err) {
+    console.error('Erro no processamento da mensagem:', err);
+  }
+});
 
-        // ===== EXPRESS / HEALTH / QR WEB =====
-        const QR_SECRET = process.env.QR_SECRET || '';
+// ===== EXPRESS / HEALTH / QR WEB =====
+const QR_SECRET = process.env.QR_SECRET || '';
 
-        function checkQrAuth(req, res, next) {
-          if (!QR_SECRET) return next(); // se não definir QR_SECRET, libera acesso
-          const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-          const token = req.query.token || req.headers['x-qr-token'] || bearer;
-          if (token === QR_SECRET) return next();
-          return res.status(401).send('Unauthorized');
-        }
+function checkQrAuth(req, res, next) {
+  if (!QR_SECRET) return next(); // se não definir QR_SECRET, libera acesso
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const token = req.query.token || req.headers['x-qr-token'] || bearer;
+  if (token === QR_SECRET) return next();
+  return res.status(401).send('Unauthorized');
+}
 
 
-        // Exibe o QR no navegador quando disponível
-        // Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
-        app.get('/qr', async (req, res) => {
-          try {
-            if (QR_SECRET && req.query.token !== QR_SECRET) {
-              return res.status(401).send('Não autorizado');
-            }
-            if (!latestQR) {
-              return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
-            }
-            const dataUrl = await QRCode.toDataURL(latestQR);
-            res.type('text/html; charset=utf-8').send(`
-              <!doctype html>
-              <html>
-                <head><meta charset="utf-8"><title>QR WhatsApp</title></head>
-                <body style="font-family:system-ui, sans-serif; text-align:center; padding:24px">
-                  <h2>Escaneie no WhatsApp → Aparelhos conectados → Conectar um aparelho</h2>
-                  <p>Gerado em: ${latestQRAt?.toLocaleString('pt-BR') || '-'}</p>
-                  <img src="${dataUrl}" alt="QR WhatsApp" style="max-width:360px; width:100%; height:auto;"/>
-                </body>
-              </html>
-            `);
-          } catch (e) {
-            console.error('[QR_ROUTE_ERROR]', e);
-            res.status(500).send('Falha ao gerar/exibir o QR.');
-          }
-        });
+// Exibe o QR no navegador quando disponível
+// Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
+app.get('/qr', async (req, res) => {
+  try {
+    if (QR_SECRET && req.query.token !== QR_SECRET) {
+      return res.status(401).send('Não autorizado');
+    }
+    if (!latestQR) {
+      return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
+    }
+    const dataUrl = await QRCode.toDataURL(latestQR);
+    res.type('text/html; charset=utf-8').send(`
+      <!doctype html>
+      <html>
+        <head><meta charset="utf-8"><title>QR WhatsApp</title></head>
+        <body style="font-family:system-ui, sans-serif; text-align:center; padding:24px">
+          <h2>Escaneie no WhatsApp → Aparelhos conectados → Conectar um aparelho</h2>
+          <p>Gerado em: ${latestQRAt?.toLocaleString('pt-BR') || '-'}</p>
+          <img src="${dataUrl}" alt="QR WhatsApp" style="max-width:360px; width:100%; height:auto;"/>
+        </body>
+      </html>
+    `);
+  } catch (e) {
+    console.error('[QR_ROUTE_ERROR]', e);
+    res.status(500).send('Falha ao gerar/exibir o QR.');
+  }
+});
+
+
 // Logs de erros não tratados
 process.on('unhandledRejection', (e) => console.error('UnhandledRejection:', e));
 process.on('uncaughtException', (e) => console.error('UncaughtException:', e));
