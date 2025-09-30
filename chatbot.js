@@ -8,6 +8,15 @@ const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
 
+console.log('[BOOT] Node', process.version);
+const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
+console.log('[BOOT] Using Chromium at:', CHROME_PATH);
+
+process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
+process.on('uncaughtException',  (e) => console.error('[uncaughtException]', e));
+
+
+
 // 2) ESTADO
 let latestQR = null;
 let latestQRAt = null;
@@ -118,6 +127,7 @@ app.get('/status', (_req, res) => {
 app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
 
 // 4) WHATSAPP WEB.JS: perfil tempor., DATA_PATH, client, listeners, initialize
+// 4) WHATSAPP WEB.JS: perfil tempor., DATA_PATH, client, listeners, initialize
 const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
 try { fs.rmSync(tmpProfile, { recursive:true, force:true }); } catch {}
 
@@ -127,13 +137,20 @@ const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
+    executablePath: CHROME_PATH,  // <- usa o caminho resolvido nos logs
     args: [
-      '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-      '--disable-gpu','--no-zygote','--no-first-run','--no-default-browser-check',
-      `--user-data-dir=${tmpProfile}`
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--remote-debugging-port=9222',       // ajuda em alguns provedores
+      `--user-data-dir=${tmpProfile}`,
     ],
-    timeout: 90000
+    // aumenta o tempo pro Chrome subir em ambiente cloud
+    timeout: Number(process.env.PPTR_TIMEOUT || 180000) // 180s
   }
 });
 
