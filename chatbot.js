@@ -11,6 +11,12 @@ const qrcodeTerminal = require('qrcode-terminal');
 // 2) ESTADO
 let latestQR = null;
 let latestQRAt = null;
+let isReady = false;
+
+// (opcional) URL pública p/ logar link do QR no console
+const PUBLIC_URL =
+  process.env.PUBLIC_URL ||
+  (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
 
 // 3) EXPRESS: app + rotas + listen
 const app = express();
@@ -24,16 +30,22 @@ const noCache = (res) => {
   res.set('Surrogate-Control','no-store');
 };
 
-// Home: sempre mostra “Chatbot online!” e, se houver QR, renderiza ao lado
+// Home: “Chatbot online!” + QR quando disponível
 app.get('/', (_req, res) => {
   const hasQR = Boolean(latestQR);
-  if (hasQR) noCache(res);
-  const refresh = hasQR ? '<meta http-equiv="refresh" content="5">' : '';
+  const waitingQR = !hasQR && !isReady; // inicializando/gerando QR
+
+  if (hasQR || waitingQR) noCache(res);
+  const refresh = (hasQR || waitingQR) ? '<meta http-equiv="refresh" content="5">' : '';
+
   const rightCol = hasQR ? '<img src="/qr.png" alt="QR WhatsApp" />' : '';
-  const info = hasQR ? 'Escaneie o QR para conectar ao WhatsApp.' : 'Já conectado ao WhatsApp ✅';
+  const info = hasQR
+    ? 'Escaneie o QR para conectar ao WhatsApp.'
+    : (isReady ? 'Já conectado ao WhatsApp ✅' : 'Gerando QR… aguarde alguns segundos.');
+
   const links = hasQR
     ? 'Prefere <a href="/qr-plain" target="_blank">tela cheia</a> ou <a href="/qr.svg" target="_blank">SVG</a>?'
-    : 'Se desconectar, um novo QR aparecerá aqui automaticamente.';
+    : (isReady ? 'Se desconectar, um novo QR aparecerá aqui automaticamente.' : '');
 
   res.type('html').send(`<!doctype html>
 <meta charset="utf-8">
@@ -55,7 +67,7 @@ ${refresh}
     <div>
       <h1>🤖 Chatbot online!</h1>
       <p>${info}</p>
-      <p class="links">${links}</p>
+      ${links ? `<p class="links">${links}</p>` : ''}
     </div>
     ${rightCol}
   </div>
@@ -97,6 +109,11 @@ app.get('/qr-plain', (_req, res) => {
 <div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
 });
 
+// Diagnóstico rápido
+app.get('/status', (_req, res) => {
+  res.json({ isReady, hasQR: Boolean(latestQR), latestQRAt, now: new Date() });
+});
+
 // **APENAS UMA** vez:
 app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
 
@@ -120,25 +137,36 @@ const client = new Client({
   }
 });
 
+// ===== Listeners =====
 client.on('qr', (qr) => {
   latestQR = qr;
   latestQRAt = new Date();
+  isReady = false;
   console.log('[QR] Aguardando leitura...');
+  if (PUBLIC_URL) console.log(`[QR] Abra: ${PUBLIC_URL}/qr-plain`);
   try { qrcodeTerminal.generate(qr, { small:true }); } catch {}
 });
 
-client.on('ready', () => { console.log('[READY] WhatsApp conectado'); latestQR = null; });
+client.on('ready', () => {
+  console.log('[READY] WhatsApp conectado');
+  latestQR = null;
+  isReady = true;
+});
+
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
-client.on('disconnected', (r) => console.error('[DISCONNECTED]', r));
+client.on('disconnected', (r) => {
+  console.error('[DISCONNECTED]', r);
+  isReady = false;
+});
 
 // **APENAS UMA** vez:
 client.initialize();
 
-
-// ===== Utils =====
+// ===== Utils (se quiser usar em outras partes) =====
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
+
 
 
 // ===== Cards / Textos =====
