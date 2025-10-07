@@ -40,48 +40,32 @@ const noCache = (res) => {
   res.set('Surrogate-Control','no-store');
 };
 
-// Home: “Chatbot online!” + QR quando disponível
-app.get('/', (_req, res) => {
-  const hasQR = Boolean(latestQR);
-  const waitingQR = !hasQR && !isReady; // inicializando/gerando QR
+// 👉 1) Raiz: sempre redireciona para a tela cheia do QR
+app.get('/', (_req, res) => res.redirect(302, '/qr-plain'));
 
-  if (hasQR || waitingQR) noCache(res);
-  const refresh = (hasQR || waitingQR) ? '<meta http-equiv="refresh" content="5">' : '';
+// 👉 2) Tela cheia do QR: sem mensagem; auto-refresh rápido até o QR existir
+app.get('/qr-plain', (_req, res) => {
+  noCache(res);
+  const refresh = '<meta http-equiv="refresh" content="2">'; // 2s p/ atualizar rápido
 
-  const rightCol = hasQR ? '<img src="/qr.png" alt="QR WhatsApp" />' : '';
-  const info = hasQR
-    ? 'Escaneie o QR para conectar ao WhatsApp.'
-    : (isReady ? 'Já conectado ao WhatsApp ✅' : 'Gerando QR… aguarde alguns segundos.');
+  if (!latestQR) {
+    // ainda gerando: tela totalmente em branco, só com auto-refresh
+    return res.type('html').send(`<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+${refresh}<title>QR do WhatsApp</title>
+<style>html,body{height:100%;margin:0;background:#fff}</style>`);
+  }
 
-  const links = hasQR
-    ? 'Prefere <a href="/qr-plain" target="_blank">tela cheia</a> ou <a href="/qr.svg" target="_blank">SVG</a>?'
-    : (isReady ? 'Se desconectar, um novo QR aparecerá aqui automaticamente.' : '');
-
-  res.type('html').send(`<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-${refresh}
-<title>Chatbot online</title>
+  // QR disponível: mostra em tela cheia
+  return res.type('html').send(`<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+${refresh}<title>QR do WhatsApp</title>
 <style>
-  :root { --pad: 24px; }
-  html,body{height:100%;margin:0;background:#fff;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  .page{min-height:100%;display:flex;align-items:center;justify-content:center;padding:var(--pad)}
-  .card{display:grid;gap:16px;grid-template-columns: 1fr ${hasQR ? 'auto' : '1fr'};align-items:center;max-width:980px;width:100%}
-  h1{margin:0 0 8px 0;font-size:28px}
-  p{margin:8px 0 0 0}
-  img{width:360px;height:360px;image-rendering:pixelated}
-  .links{opacity:.75;margin-top:8px}
+  html,body{height:100%;margin:0;background:#fff}
+  .wrap{display:flex;align-items:center;justify-content:center;height:100%}
+  img{max-width:92vmin;max-height:92vmin;image-rendering:pixelated}
 </style>
-<div class="page">
-  <div class="card">
-    <div>
-      <h1>🤖 Chatbot online!</h1>
-      <p>${info}</p>
-      ${links ? `<p class="links">${links}</p>` : ''}
-    </div>
-    ${rightCol}
-  </div>
-</div>`);
+<div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
 });
 
 
