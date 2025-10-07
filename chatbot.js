@@ -30,6 +30,7 @@ const PUBLIC_URL =
 // 3) EXPRESS: app + rotas + listen
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+console.log('[HTTP] Vai ouvir na porta:', PORT); // <- confirma a porta em tempo de execução
 
 // helper de no-cache
 const noCache = (res) => {
@@ -144,7 +145,7 @@ const client = new Client({
       '--no-zygote',
       '--no-first-run',
       '--no-default-browser-check',
-      '--remote-debugging-port=9222',       // ajuda em alguns provedores
+      '--remote-debugging-port=0',       // ajuda em alguns provedores
       `--user-data-dir=${tmpProfile}`,
     ],
     // aumenta o tempo pro Chrome subir em ambiente cloud
