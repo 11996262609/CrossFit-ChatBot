@@ -40,7 +40,6 @@ const noCache = (res) => {
   res.set('Surrogate-Control','no-store');
 };
 
-
 // Home: “Chatbot online!” + QR quando disponível
 app.get('/', (_req, res) => {
   const hasQR = Boolean(latestQR);
@@ -50,6 +49,9 @@ app.get('/', (_req, res) => {
   const refresh = (hasQR || waitingQR) ? '<meta http-equiv="refresh" content="5">' : '';
 
   const rightCol = hasQR ? '<img src="/qr.png" alt="QR WhatsApp" />' : '';
+  const info = hasQR
+    ? 'Escaneie o QR para conectar ao WhatsApp.'
+    : (isReady ? 'Já conectado ao WhatsApp ✅' : 'Gerando QR… aguarde alguns segundos.');
 
   const links = hasQR
     ? 'Prefere <a href="/qr-plain" target="_blank">tela cheia</a> ou <a href="/qr.svg" target="_blank">SVG</a>?'
@@ -81,6 +83,7 @@ ${refresh}
   </div>
 </div>`);
 });
+
 
 // QR puro em SVG
 app.get('/qr.svg', async (_req, res) => {
