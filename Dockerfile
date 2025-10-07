@@ -1,7 +1,8 @@
 FROM node:20-bullseye
 
-# Dependências do Chrome
+# 1) Instala o Chromium do sistema e libs necessárias
 RUN apt-get update && apt-get install -y \
+  chromium \
   ca-certificates wget xdg-utils \
   fonts-liberation \
   libasound2 libatk-bridge2.0-0 libatk1.0-0 \
@@ -16,16 +17,25 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# 2) Instala dependências do Node (sem dev)
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Baixa o Chrome do Puppeteer (fica em /root/.cache/puppeteer/...)
-RUN npx puppeteer browsers install chrome
+# ❌ IMPORTANTE: NÃO baixe o Chrome do Puppeteer.
+# (se você tinha uma linha "npx puppeteer browsers install chrome", REMOVA-A)
 
+# 3) Copia o código
 COPY . .
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV WWEBJS_DATA_PATH=/data/wwebjs_auth
 
-EXPOSE 3000
+# 4) Variáveis de ambiente padrão
+ENV NODE_ENV=production
+ENV PORT=8000
+ENV WWEBJS_DATA_PATH=/data/session
+
+# 👉 Aponta o Puppeteer para o Chromium do sistema e pula downloads
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+EXPOSE 8000
 CMD ["node","chatbot.js"]
