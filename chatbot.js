@@ -15,22 +15,19 @@ console.log('[BOOT] Using Chromium at:', CHROME_PATH);
 process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
 process.on('uncaughtException',  (e) => console.error('[uncaughtException]', e));
 
-
-
 // 2) ESTADO
 let latestQR = null;
 let latestQRAt = null;
 let isReady = false;
 
-// (opcional) URL pública p/ logar link do QR no console
 const PUBLIC_URL =
   process.env.PUBLIC_URL ||
   (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
 
-// 3) EXPRESS: app + rotas + listen
+// 3) EXPRESS
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-console.log('[HTTP] Vai ouvir na porta:', PORT); // <- confirma a porta em tempo de execução
+console.log('[HTTP] Vai ouvir na porta:', PORT);
 
 // helper de no-cache
 const noCache = (res) => {
@@ -40,23 +37,31 @@ const noCache = (res) => {
   res.set('Surrogate-Control','no-store');
 };
 
-// 👉 1) Raiz: sempre redireciona para a tela cheia do QR
+// ---- ROTAS BÁSICAS ----
+
+// health-check do Koyeb
+app.get('/health', (_req, res) => res.status(200).send('ok'));
+
+// status rápido
+app.get('/status', (_req, res) => {
+  res.json({ isReady, hasQR: Boolean(latestQR), latestQRAt, now: new Date() });
+});
+
+// raiz → QR fullscreen
 app.get('/', (_req, res) => res.redirect(302, '/qr-plain'));
 
-// 👉 2) Tela cheia do QR: sem mensagem; auto-refresh rápido até o QR existir
+// QR fullscreen: sem mensagem; auto-refresh até existir
 app.get('/qr-plain', (_req, res) => {
   noCache(res);
-  const refresh = '<meta http-equiv="refresh" content="2">'; // 2s p/ atualizar rápido
+  const refresh = '<meta http-equiv="refresh" content="2">';
 
   if (!latestQR) {
-    // ainda gerando: tela totalmente em branco, só com auto-refresh
     return res.type('html').send(`<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${refresh}<title>QR do WhatsApp</title>
 <style>html,body{height:100%;margin:0;background:#fff}</style>`);
   }
 
-  // QR disponível: mostra em tela cheia
   return res.type('html').send(`<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${refresh}<title>QR do WhatsApp</title>
@@ -68,8 +73,7 @@ ${refresh}<title>QR do WhatsApp</title>
 <div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
 });
 
-
-// QR puro em SVG
+// QR em SVG
 app.get('/qr.svg', async (_req, res) => {
   try {
     if (!latestQR) return res.status(204).end();
@@ -81,7 +85,7 @@ app.get('/qr.svg', async (_req, res) => {
   }
 });
 
-// QR puro em PNG
+// QR em PNG
 app.get('/qr.png', async (_req, res) => {
   try {
     if (!latestQR) return res.status(204).end();
@@ -93,27 +97,10 @@ app.get('/qr.png', async (_req, res) => {
   }
 });
 
-// Página fullscreen com auto-refresh
-app.get('/qr-plain', (_req, res) => {
-  if (!latestQR) return res.send('<!doctype html><meta charset="utf-8"><h1>Já conectado ✅</h1>');
-  noCache(res);
-  res.type('html').send(`<!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="5"><title>QR do WhatsApp</title>
-<style>html,body{height:100%;margin:0;background:#fff}.wrap{display:flex;align-items:center;justify-content:center;height:100%}img{max-width:92vmin;max-height:92vmin;image-rendering:pixelated}</style>
-<div class="wrap"><img src="/qr.png" alt="QR WhatsApp"></div>`);
-});
-
-// Diagnóstico rápido
-app.get('/status', (_req, res) => {
-  res.json({ isReady, hasQR: Boolean(latestQR), latestQRAt, now: new Date() });
-});
-
-// **APENAS UMA** vez:
+// sobe o HTTP
 app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
 
-// 4) WHATSAPP WEB.JS: perfil tempor., DATA_PATH, client, listeners, initialize
-// 4) WHATSAPP WEB.JS: perfil tempor., DATA_PATH, client, listeners, initialize
+// 4) WHATSAPP WEB.JS
 const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
 try { fs.rmSync(tmpProfile, { recursive:true, force:true }); } catch {}
 
@@ -122,21 +109,24 @@ const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwe
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
-    headless: true,
-    executablePath: CHROME_PATH,  // <- usa o caminho resolvido nos logs
+    headless: true,                // 'true' ou 'new' (Node 20) – ambos funcionam
+    executablePath: CHROME_PATH,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
       '--no-first-run',
       '--no-default-browser-check',
-      '--remote-debugging-port=0',       // ajuda em alguns provedores
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--window-size=1280,720',
+      '--remote-debugging-pipe',   // ← estável em cloud (SEM portas de debug)
       `--user-data-dir=${tmpProfile}`,
     ],
-    // aumenta o tempo pro Chrome subir em ambiente cloud
-    timeout: Number(process.env.PPTR_TIMEOUT || 180000) // 180s
+    timeout: Number(process.env.PPTR_TIMEOUT || 240000),
+    protocolTimeout: 240000,
   }
 });
 
@@ -162,8 +152,8 @@ client.on('disconnected', (r) => {
   isReady = false;
 });
 
-// **APENAS UMA** vez:
 client.initialize();
+
 
 // ===== Utils (se quiser usar em outras partes) =====
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
