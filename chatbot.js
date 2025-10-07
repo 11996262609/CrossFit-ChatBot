@@ -39,6 +39,7 @@ const noCache = (res) => {
   res.set('Surrogate-Control','no-store');
 };
 
+
 // Home: “Chatbot online!” + QR quando disponível
 app.get('/', (_req, res) => {
   const hasQR = Boolean(latestQR);
@@ -48,9 +49,6 @@ app.get('/', (_req, res) => {
   const refresh = (hasQR || waitingQR) ? '<meta http-equiv="refresh" content="5">' : '';
 
   const rightCol = hasQR ? '<img src="/qr.png" alt="QR WhatsApp" />' : '';
-  const info = hasQR
-    ? 'Escaneie o QR para conectar ao WhatsApp.'
-    : (isReady ? 'Já conectado ao WhatsApp ✅' : 'Gerando QR… aguarde alguns segundos.');
 
   const links = hasQR
     ? 'Prefere <a href="/qr-plain" target="_blank">tela cheia</a> ou <a href="/qr.svg" target="_blank">SVG</a>?'
@@ -185,20 +183,21 @@ const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await 
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
 
-
 // ===== Cards / Textos =====
 const menuText = (nome = '') => 
 `Olá ${firstName(nome)}! 👋
 
-Seja bem-vindo(a) à família Madala CF! 💪\n\nCom 10 anos de mercado, levamos a sério o compromisso que assumimos com você.\n
-Sua saúde e seu bem-estar são nossa prioridade.\n\n
+Seja bem-vindo(a) à família Madala CF! 💪
 
-Escolha uma opção para descobrir mais sobre a Madala CF (envie o número):\n
-1 - 🏋️ Como funcionam as aulas de CrossFit\n
-2 - 🥋 Aulas de judô com o Sensei Jeferson (todos os dias)\n
-3 - 🌐 Redes sociais da Madala CF\n
-4 - 🏆 Eventos da Madala CF\n
-0 - ☎ Falar com o Tchê (gerente-geral)
+Com 10 anos de mercado, levamos a sério o compromisso que assumimos com você.
+Sua saúde e seu bem-estar são nossa prioridade.
+
+Escolha uma opção para descobrir mais sobre a Madala CF (envie o número):
+1 - 🏋️ Como funcionam as aulas de CrossFit
+2 - 🥋 Aulas de judô todas as quartas às 21h
+3 - 🌐 Redes sociais da Madala CF
+4 - 🏆 Eventos da Madala CF
+0 - ☎ Falar com o recepcionista 
 `;
 
 function cfPosMenu(nome = '') {
@@ -219,7 +218,6 @@ function menu_rápido(nome = '') {
 • *Sair*   → ❌ Encerrar conversa`;
 }
 
-
 function menu_agendamento(nome = '') {
   const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
   const prefixo = n ? `${n}, ` : '';
@@ -229,7 +227,8 @@ function menu_agendamento(nome = '') {
 • *Sair*   → ❌ Encerrar conversa`;
 }
 
-
+// helper p/ sequência dos cards
+// helper (declare UMA vez no arquivo)
 const RESPOSTAS = {
   comoFunciona: (nome = '') => {
     const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
@@ -240,68 +239,86 @@ const RESPOSTAS = {
 • Treinos em grupo, com coach supervisionando a turma (todos os níveis).
 • Aula com aquecimento.
 • Escalas: Iniciante, Intermediário e Avançado.
-• Avaliação inicial para ajustar cargas e movimentos.\n
+• Avaliação inicial para ajustar cargas e movimentos.
 
-📍 Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9\n
+📍 Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9
 
-Bora fazer uma aula experimental? 💪\n
+Bora fazer uma aula experimental? 💪
 ✅ Agende sua aula:
-https://calendar.app.google/9r6mFZTPwUivm4x89\n`;
+https://calendar.app.google/9r6mFZTPwUivm4x89`;
   },
 
+  planos: (nome = '') => {
+    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const titulo = n
+      ? `*Bora, ${n}, escolher seu plano?* (CrossFit Premium)`
+      : `*Bora escolher seu plano?* (CrossFit Premium)`;
 
-planos: (nome = '') => {
-  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
-  const titulo = n
-    ? `*Bora, ${n}, escolher seu plano?* (CrossFit Premium)`
-    : `*Bora escolher seu plano?* (CrossFit Premium)`;
+    return `${titulo}
+💰 Trimestral: R$569,90/mês
+💰 Semestral: R$489,90/mês
+💰 Anual: R$399,99/mês
 
-  return `${titulo}
-💰 Trimestral: R$ 510/mês
-💰 Semestral: R$ 440/mês
-💰 Anual: R$ 360/mês\n
+Formas de pagamento: cartão, PIX e boleto.`;
+  },
 
-Formas de pagamento: cartão, PIX e boleto.\n`;
-},
-
-agendarCrossfit: (nome = '') => {
-  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
-  return `🗓️ *Agende sua aula experimental de CrossFit*
+  agendarCrossfit: (nome = '') => {
+    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    return `🗓️ *Agende sua aula experimental de CrossFit*
 ${n ? `${n}, ` : ''}escolha seu melhor horário no link:
-https://calendar.app.google/9r6mFZTPwUivm4x89\n`;
-},
+https://calendar.app.google/S89Pyb5LRuChWDQq7`;
+  },
 
+  Modalidade_judo: (nome = '') => {
+    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    return `*Judô* 🥋
+Venha${n ? `, ${n},` : ''} aprender judô com o *Sensei Jeferson* na Madala CF! 👊
+• Aulas às quartas, às 21h (duração: 1h).
+• Instrutor: *Sensei Jeferson*.
+• Mensalidade: R$200,00.
+• Turmas para todos os níveis (iniciante ao avançado).
 
-Modalidade_judo: `*Judô* 🥋\n
-Venha${(typeof n !== 'undefined' && n) ? `, ${n},` : ''} aprender judô com o *Sensei Jeferson* na Madala CF! 👊\n
-• Aulas todos os dias, às 21h (duração: 1h).\n
-• Instrutor: *Sensei Jeferson*.\n
-• Mensalidade: R$ 150,00.\n
-• Turmas para todos os níveis (iniciante ao avançado).\n
-\n\nQuer sentir a energia do tatame? 💥\n
-✅ Agende sua aula experimental:\nhttps://calendar.google.com/calendar/u/0/r/month/2025/9/24`,
+✅ Agende sua aula experimental:
+https://calendar.google.com/calendar/u/0/r/month/2025/9/24`;
+  },
 
-Eventos_madalacf: `*Eventos*\nFique por dentro${(typeof n !== 'undefined' && n) ? `, ${n},` : ''} do que rola na Madala CF:\n\n
+  Eventos_madalacf: (nome = '') => {
+    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    return `*Eventos*
+Fique por dentro${n ? `, ${n},` : ''} do que rola na Madala CF:
+
 • Torneios internos e abertos (CrossFit e Judô).
 • Workshops e palestras com profissionais renomados.
 • Aulas especiais temáticas.
-• Encontros sociais e confraternizações.\n\n
-Participe e fortaleça nossa comunidade! 🤝\n
-📅 Mais detalhes e inscrições no link:\n
-https://calendar.google.com/calendar/u/0/r/month/2024/6/1`,
+• Encontros sociais e confraternizações.
 
+Participe e fortaleça nossa comunidade! 🤝
+📅 Mais detalhes e inscrições no link:
+https://calendar.app.google/S89Pyb5LRuChWDQq7`;
+  },
 
-atendente: `Este é o contato do *Tchê* (gerente-geral) 👨‍💼\n
-${(typeof n !== 'undefined' && n) ? `${n}, ` : ''}Pronto para te ajudar com qualquer dúvida ou suporte.\n\n
+  atendente: (nome = '') => {
+    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    return `Este é o contato do *Tchê* (gerente-geral) 👨‍💼
+${n ? `${n}, ` : ''}pronto para te ajudar com qualquer dúvida ou suporte.
 
-WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1\n\n
-Envie uma mensagem e aguarde um momento para o retorno.`,
+WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1
 
+Envie uma mensagem e aguarde um momento para o retorno.`;
+  },
 
-  Redes_sociais: `*REDES SOCIAIS MADALA CF* 📱
-📸 Instagram:  @madalaCF - https://www.instagram.com/madalacf/
-👍 Facebook:   Madala_CF - https://www.facebook.com/madalacf/?locale=pt_BR
-🌐 Site:       Page_mada -https://madalacf.com.br`
+  // --- Redes sociais: um link por card (garante um preview por mensagem) ---
+  instagram: `*REDES SOCIAIS MADALA CF* 📱
+📸 Instagram: @madalaCF
+https://www.instagram.com/madalacf/`,
+
+  facebook: `*REDES SOCIAIS MADALA CF* 📱
+👍 Facebook: Madala_CF
+https://www.facebook.com/madalacf/?locale=pt_BR`,
+
+  site: `*REDES SOCIAIS MADALA CF* 📱
+🌐 Site oficial
+https://madalacf.com.br`,
 };
 
 // ===== Estado simples por chat =====
@@ -311,16 +328,16 @@ const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
 async function enviarMenu(msg, chat, nome) {
   await typing(chat);
 
-  // (1) Fallback em texto (funciona em qualquer dispositivo)
+  // (1) Fallback em texto
   await client.sendMessage(msg.from, menuText(nome));
 
-  // (2) Tenta enviar o List (melhor UX no celular)
+  // (2) Tenta enviar o List
   try {
     const sections = [{
       title: 'Menu principal',
       rows: [
         { id: '1', title: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
-        { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson todos os dias.' },
+        { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson (quartas, 21h)' },
         { id: '3', title: '3 - 🌐 Redes sociais Madala CF' },
         { id: '4', title: '4 - 🏆 Eventos Madala CF' },
         { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
@@ -349,15 +366,15 @@ client.on('message', async (msg) => {
     const lowerText = rawText.toLowerCase();
     let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // Se a mensagem for resposta de List, use o id da linha para rotear (fica '1','2','3','4','0')
+    // Se a mensagem for resposta de List
     if (msg.type === 'list_response' && msg.selectedRowId) {
       asciiText = String(msg.selectedRowId).trim().toLowerCase();
     }
 
-    // Gatilho de saudação/menu → abre o menu inicial
+    // Gatilho de saudação/menu
     const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
     if (ehSaudacao) {
-      estado[chatId] = 'MAIN';          // reseta estado
+      estado[chatId] = 'MAIN';
       await enviarMenu(msg, chat, nome);
       return;
     }
@@ -367,110 +384,93 @@ client.on('message', async (msg) => {
 
     // ===== MAIN (menu principal) =====
     if (st === 'MAIN') {
-      
-                        // 1) CrossFit → "Como funciona" + pós-menu C
-                        if (/^\s*mais\b/.test(lowerText)) {
-                          await typing(chat);
-                          const planosMsg = (typeof RESPOSTAS?.planos === 'function') ? RESPOSTAS.planos(nome) : RESPOSTAS.planos;
-                          if (planosMsg) await client.sendMessage(chatId, planosMsg);
 
-                          await typing(chat);
-                          const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
-                          if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
-                          return;
-                        } else if (/^\s*marcar\b/.test(lowerText)) {
-                          await typing(chat);
-                          const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
-                          if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
-                          return;
-                        // menu/sair se quiser:
-                        } else if (/^\s*menu\b/.test(lowerText)) {
-                          await typing(chat);
-                          await client.sendMessage(chatId, menu_rápido(nome)); // ou menu_rápido('')
-                          return;
-                        } else if (/^\s*sair\b/.test(lowerText)) {
-                          await typing(chat);
-                          await client.sendMessage(chatId, 'Ok! Conversa encerrada. 👋');
-                          return;
-                        }
+      // atalhos texto
+      if (/^\s*mais\b/.test(lowerText)) {
+        await typing(chat);
+        const planosMsg = (typeof RESPOSTAS?.planos === 'function') ? RESPOSTAS.planos(nome) : RESPOSTAS.planos;
+        if (planosMsg) await client.sendMessage(chatId, planosMsg);
 
-                        // --- Depois as opções de conteúdo/números ---
-                        else if (
-                          asciiText === '1' ||
-                          lowerText.startsWith('1 - 🏋️') ||
-                          /\bcomo funciona\b/.test(lowerText)
-                        ) {
-                          await typing(chat);
-                          const msgComoFunciona = (typeof RESPOSTAS?.comoFunciona === 'function')
-                            ? RESPOSTAS.comoFunciona(nome)
-                            : RESPOSTAS.comoFunciona;
-                          if (msgComoFunciona) await client.sendMessage(chatId, msgComoFunciona);
+        await typing(chat);
+        const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+        if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
+        return;
+      } else if (/^\s*marcar\b/.test(lowerText)) {
+        await typing(chat);
+        const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+        if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
+        return;
+      } else if (/^\s*menu\b/.test(lowerText)) {
+        await typing(chat);
+        await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      } else if (/^\s*sair\b/.test(lowerText)) {
+        await typing(chat);
+        await client.sendMessage(chatId, 'Ok! Conversa encerrada. 👋');
+        return;
+      }
 
-                          await typing(chat);
-                          await client.sendMessage(chatId, cfPosMenu(nome));
-                          return;
-                        }
+      // 1) CrossFit - Como funciona
+      if (asciiText === '1' || lowerText.startsWith('1 - 🏋️') || /\bcomo funciona\b/.test(lowerText)) {
+        await typing(chat);
+        const msgComoFunciona = (typeof RESPOSTAS?.comoFunciona === 'function') ? RESPOSTAS.comoFunciona(nome) : RESPOSTAS.comoFunciona;
+        if (msgComoFunciona) await client.sendMessage(chatId, msgComoFunciona);
 
-                        // 2) Judô
-                        if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
-                          await typing(chat);
+        await typing(chat);
+        await client.sendMessage(chatId, cfPosMenu(nome));
+        return;
+      }
 
-                          const judoMsg = (typeof RESPOSTAS?.Modalidade_judo === 'function')
-                            ? RESPOSTAS.Modalidade_judo(nome)
-                            : RESPOSTAS.Modalidade_judo;
+      // 2) Judô
+      if (asciiText === '2' || lowerText.startsWith('2 - 🥋')) {
+        await typing(chat);
+        const judoMsg = (typeof RESPOSTAS?.Modalidade_judo === 'function') ? RESPOSTAS.Modalidade_judo(nome) : RESPOSTAS.Modalidade_judo;
+        if (judoMsg) await client.sendMessage(chatId, judoMsg);
 
-                          if (judoMsg) await client.sendMessage(chatId, judoMsg);
+        await typing(chat);
+        await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      }
 
-                          await typing(chat);
-                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
-                          return;
-                        }
+      // 3) Redes sociais — envia cards em sequência
+      if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
+        await typing(chat);
 
-                        // 3) Redes sociais
-                        if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
-                          await typing(chat);
+        const ordem = ['instagram', 'facebook', 'site'];
+        for (const key of ordem) {
+          const texto = (typeof RESPOSTAS?.[key] === 'function') ? RESPOSTAS[key](nome) : RESPOSTAS[key];
+          if (!texto) continue;
 
-                          const redesMsg = (typeof RESPOSTAS?.Redes_sociais === 'function')
-                            ? RESPOSTAS.Redes_sociais(nome)
-                            : RESPOSTAS.Redes_sociais;
+          await client.sendMessage(chatId, texto);
+          await typing(chat);
+          await delay(1200); // pequeno intervalo para o preview carregar
+        }
 
-                          if (redesMsg) await client.sendMessage(chatId, redesMsg);
+        await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      }
 
-                          await typing(chat);
-                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
-                          return;
-                        }
+      // 4) Eventos
+      if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
+        await typing(chat);
+        const eventosMsg = (typeof RESPOSTAS?.Eventos_madalacf === 'function') ? RESPOSTAS.Eventos_madalacf(nome) : RESPOSTAS.Eventos_madalacf;
+        if (eventosMsg) await client.sendMessage(chatId, eventosMsg);
 
-                        // 4) Eventos
-                        if (asciiText === '4' || lowerText.startsWith('4 - 🏆')) {
-                          await typing(chat);
+        await typing(chat);
+        await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      }
 
-                          const eventosMsg = (typeof RESPOSTAS?.Eventos_madalacf === 'function')
-                            ? RESPOSTAS.Eventos_madalacf(nome)
-                            : RESPOSTAS.Eventos_madalacf;
+      // 0) Atendente
+      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
+        await typing(chat);
+        const atendenteMsg = (typeof RESPOSTAS?.atendente === 'function') ? RESPOSTAS.atendente(nome) : RESPOSTAS.atendente;
+        if (atendenteMsg) await client.sendMessage(chatId, atendenteMsg);
 
-                          if (eventosMsg) await client.sendMessage(chatId, eventosMsg);
-
-                          await typing(chat);
-                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
-                          return;
-                        }
-
-                        // 0) Atendente
-                        if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
-                          await typing(chat);
-
-                          const atendenteMsg = (typeof RESPOSTAS?.atendente === 'function')
-                            ? RESPOSTAS.atendente(nome)
-                            : RESPOSTAS.atendente;
-
-                          if (atendenteMsg) await client.sendMessage(chatId, atendenteMsg);
-
-                          await typing(chat);
-                          await client.sendMessage(chatId, menu_rápido(nome)); // <- aqui
-                          return;
-                        }
-
+        await typing(chat);
+        await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      }
 
       // Fallback no MAIN
       await typing(chat);
@@ -479,46 +479,53 @@ client.on('message', async (msg) => {
       return;
     }
 
-                  // ===== CF_MENU (pós-menu do CrossFit) =====
-                  if (st === 'CF_MENU') {
-                    // "mais" → planos
-                    if ([  'mais', 'planos', 'plano', 'valores', 'valor',
-                            'preco', 'precos', 'mensalidade', 'mensalidades',
-                            'pacote', 'pacotes', 'tabela preco', 'tabela de preco', 'tabela de precos',
-                            'quanto custa', 'quanto e', 'quanto fica', 'quanto sai',
-                            'por mes', 'quanto por mes', 'preco crossfit', 'preco da mensalidade',
-                            'investimento', 'mensal', 'trimestral', 'semestral', 'anual',
-                'promocao', 'desconto', 'matricula', 'taxa'].includes(asciiText)) {
-                      await typing(chat);
-                      await client.sendMessage(chatId, RESPOSTAS.planos);
-                      await client.sendMessage(chatId, cfPosMenu(nome));  // permanece no CF_MENU
-                      return;
-                    }
+    // ===== CF_MENU (pós-menu do CrossFit) =====
+    if (st === 'CF_MENU') {
+      // "mais" → planos
+      if ([
+        'mais', 'planos', 'plano', 'valores', 'valor',
+        'preco', 'precos', 'mensalidade', 'mensalidades',
+        'pacote', 'pacotes', 'tabela preco', 'tabela de preco', 'tabela de precos',
+        'quanto custa', 'quanto e', 'quanto fica', 'quanto sai',
+        'por mes', 'quanto por mes', 'preco crossfit', 'preco da mensalidade',
+        'investimento', 'mensal', 'trimestral', 'semestral', 'anual',
+        'promocao', 'desconto', 'matricula', 'taxa'
+      ].includes(asciiText)) {
+        await typing(chat);
+        const planosMsg = (typeof RESPOSTAS?.planos === 'function') ? RESPOSTAS.planos(nome) : RESPOSTAS.planos;
+        await client.sendMessage(chatId, planosMsg);
+        await client.sendMessage(chatId, cfPosMenu(nome));
+        return;
+      }
 
-                  // "marcar" → agendamento
-                  if ([  'marcar', 'agendar', 'agendamento',
-                          'reservar', 'reserva', 'bookar', 'booking',
-                          'agenda', 'horario', 'horarios',
-                          'disponibilidade', 'disponivel',
-                          'vaga', 'vagas', 'encaixe', 'encaixar',
-                          'inscricao', 'inscrever', 'matricula', 'matricular',
-                          'aula experimental', 'aula teste', 'aula avulsa', 'trial',
-                          'drop in', 'drop-in', 'dropin'].includes(asciiText)) {
-                    await typing(chat);
-                    await client.sendMessage(chatId, RESPOSTAS.agendarCrossfit);
-                    await client.sendMessage(chatId, cfPosMenu(nome));
-                    return;
-                  }
+      // "marcar" → agendamento
+      if ([
+        'marcar', 'agendar', 'agendamento',
+        'reservar', 'reserva', 'bookar', 'booking',
+        'agenda', 'horario', 'horarios',
+        'disponibilidade', 'disponivel',
+        'vaga', 'vagas', 'encaixe', 'encaixar',
+        'inscricao', 'inscrever', 'matricula', 'matricular',
+        'aula experimental', 'aula teste', 'aula avulsa', 'trial',
+        'drop in', 'drop-in', 'dropin'
+      ].includes(asciiText)) {
+        await typing(chat);
+        const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+        await client.sendMessage(chatId, agendaMsg);
+        await client.sendMessage(chatId, cfPosMenu(nome));
+        return;
+      }
 
       // "menu"/"inicio" → volta ao menu inicial
-      if ([  'menu', 'menu inicial', 'menu principal',
-  'inicio', 'tela inicial', 'pagina inicial', 'home',
-  'voltar ao menu', 'voltar pro menu', 'voltar p menu', 'voltar p/ menu', 'voltar menu',
-  'retornar ao menu', 'retornar pro menu',
-  'voltar ao inicio', 'voltar pro inicio', 'voltar p/ inicio', 'voltar p inicio',
-  'ir para o menu', 'ir ao menu', 'menu por favor',
-  '/menu', '/start', 'start', 'back'
-].includes(asciiText)) {
+      if ([
+        'menu', 'menu inicial', 'menu principal',
+        'inicio', 'tela inicial', 'pagina inicial', 'home',
+        'voltar ao menu', 'voltar pro menu', 'voltar p menu', 'voltar p/ menu', 'voltar menu',
+        'retornar ao menu', 'retornar pro menu',
+        'voltar ao inicio', 'voltar pro inicio', 'voltar p/ inicio', 'voltar p inicio',
+        'ir para o menu', 'ir ao menu', 'menu por favor',
+        '/menu', '/start', 'start', 'back'
+      ].includes(asciiText)) {
         estado[chatId] = 'MAIN';
         await enviarMenu(msg, chat, nome);
         return;
@@ -540,6 +547,8 @@ client.on('message', async (msg) => {
     console.error('Erro no processamento da mensagem:', err);
   }
 });
+
+
 
 // ===== EXPRESS / HEALTH / QR WEB =====
 const QR_SECRET = process.env.QR_SECRET || '';
