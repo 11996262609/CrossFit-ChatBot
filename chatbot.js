@@ -98,7 +98,7 @@ app.get('/qr.png', async (_req, res) => {
 });
 
 // sobe o HTTP
-app.listen(PORT, () => console.log(`Health-check na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Health-check na porta ${PORT}`));
 
 // 4) WHATSAPP WEB.JS
 const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
