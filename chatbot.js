@@ -223,7 +223,7 @@ const RESPOSTAS = {
 
 Bora fazer uma aula experimental? 💪
 ✅ Agende sua aula:
-https://calendar.app.google/9r6mFZTPwUivm4x89`;
+https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
   },
 
   planos: (nome = '') => {
@@ -244,7 +244,7 @@ Formas de pagamento: cartão, PIX e boleto.`;
     const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
     return `🗓️ *Agende sua aula experimental de CrossFit*
 ${n ? `${n}, ` : ''}escolha seu melhor horário no link:
-https://calendar.app.google/S89Pyb5LRuChWDQq7`;
+https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
   },
 
   Modalidade_judo: (nome = '') => {
@@ -272,7 +272,7 @@ Fique por dentro${n ? `, ${n},` : ''} do que rola na Madala CF:
 
 Participe e fortaleça nossa comunidade! 🤝
 📅 Mais detalhes e inscrições no link:
-https://calendar.app.google/S89Pyb5LRuChWDQq7`;
+https://calendar.app.google/SEWQHDEavA3huYhYA`;
   },
 
   atendente: (nome = '') => {
