@@ -542,7 +542,7 @@ function checkQrAuth(req, res, next) {
 
 // Exibe o QR no navegador quando disponível
 // Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
-app.get('/qr', async (req, res) => {
+app.get('/whatsapp-qr', async (req, res) => {
   try {
     if (QR_SECRET && req.query.token !== QR_SECRET) {
       return res.status(401).send('Não autorizado');
