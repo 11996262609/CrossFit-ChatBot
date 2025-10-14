@@ -1,21 +1,17 @@
-// 1) IMPORTS
+// ========== IMPORTS ==========
 const express = require('express');
 const { Client, LocalAuth, List } = require('whatsapp-web.js');
 const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
 
-console.log('[BOOT] Node', process.version);
-const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
-console.log('[BOOT] Using Chromium at:', CHROME_PATH);
-
+// Logs globais
 process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
 process.on('uncaughtException',  (e) => console.error('[uncaughtException]', e));
 
-// 2) ESTADO
+console.log('[BOOT] Node', process.version);
+
+// ========== ESTADO ==========
 let latestQR = null;
 let latestQRAt = null;
 let isReady = false;
@@ -24,12 +20,11 @@ const PUBLIC_URL =
   process.env.PUBLIC_URL ||
   (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
 
-// 3) EXPRESS
+// ========== HTTP ==========
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 console.log('[HTTP] Vai ouvir na porta:', PORT);
 
-// helper de no-cache
 const noCache = (res) => {
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma','no-cache');
@@ -38,11 +33,8 @@ const noCache = (res) => {
 };
 
 // ---- ROTAS BÁSICAS ----
-
-// health-check do Koyeb
 app.get('/health', (_req, res) => res.status(200).send('ok'));
 
-// status rápido
 app.get('/status', (_req, res) => {
   res.json({ isReady, hasQR: Boolean(latestQR), latestQRAt, now: new Date() });
 });
@@ -50,18 +42,16 @@ app.get('/status', (_req, res) => {
 // raiz → QR fullscreen
 app.get('/', (_req, res) => res.redirect(302, '/qr-plain'));
 
-// QR fullscreen: sem mensagem; auto-refresh até existir
+// QR fullscreen (auto-refresh)
 app.get('/qr-plain', (_req, res) => {
   noCache(res);
   const refresh = '<meta http-equiv="refresh" content="2">';
-
   if (!latestQR) {
     return res.type('html').send(`<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${refresh}<title>QR do WhatsApp</title>
 <style>html,body{height:100%;margin:0;background:#fff}</style>`);
   }
-
   return res.type('html').send(`<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${refresh}<title>QR do WhatsApp</title>
@@ -97,47 +87,57 @@ app.get('/qr.png', async (_req, res) => {
   }
 });
 
-// sobe o HTTP
+// Proteção opcional por token na rota abaixo (mantida como no seu código)
+const QR_SECRET = process.env.QR_SECRET || '';
+function checkQrAuth(req, res, next) {
+  if (!QR_SECRET) return next();
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const token = req.query.token || req.headers['x-qr-token'] || bearer;
+  if (token === QR_SECRET) return next();
+  return res.status(401).send('Unauthorized');
+}
+
+app.get('/whatsapp-qr', checkQrAuth, async (req, res) => {
+  try {
+    if (!latestQR) return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
+    const dataUrl = await QRCode.toDataURL(latestQR);
+    res.type('text/html; charset=utf-8').send(`
+      <!doctype html>
+      <html>
+        <head><meta charset="utf-8"><title>QR WhatsApp</title></head>
+        <body style="font-family:system-ui, sans-serif; text-align:center; padding:24px">
+          <h2>Escaneie no WhatsApp → Aparelhos conectados → Conectar um aparelho</h2>
+          <p>Gerado em: ${latestQRAt?.toLocaleString('pt-BR') || '-'}</p>
+          <img src="${dataUrl}" alt="QR WhatsApp" style="max-width:360px; width:100%; height:auto;"/>
+        </body>
+      </html>
+    `);
+  } catch (e) {
+    console.error('[QR_ROUTE_ERROR]', e);
+    res.status(500).send('Falha ao gerar/exibir o QR.');
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => console.log(`Health-check na porta ${PORT}`));
 
-// 4) WHATSAPP WEB.JS
-const tmpProfile = path.join(os.tmpdir(), 'wwebjs_tmp_profile');
-try { fs.rmSync(tmpProfile, { recursive:true, force:true }); } catch {}
-
-const DATA_PATH = process.env.WWEBJS_DATA_PATH || path.join(process.cwd(), '.wwebjs_auth');
+// ========== WHATSAPP (FINAL LIMPO) ==========
+const DATA_PATH = process.env.WWEBJS_DATA_PATH || './.wwebjs_auth';
+if (!fs.existsSync(DATA_PATH)) fs.mkdirSync(DATA_PATH, { recursive: true });
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
-    headless: true,                // 'true' ou 'new' (Node 20) – ambos funcionam
-    executablePath: CHROME_PATH,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--window-size=1280,720',
-      '--remote-debugging-pipe',   // ← estável em cloud (SEM portas de debug)
-      `--user-data-dir=${tmpProfile}`,
-    ],
-    timeout: Number(process.env.PPTR_TIMEOUT || 240000),
-    protocolTimeout: 240000,
-  }
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  },
 });
 
-// ===== Listeners =====
 client.on('qr', (qr) => {
   latestQR = qr;
   latestQRAt = new Date();
   isReady = false;
-  console.log('[QR] Aguardando leitura...');
-  if (PUBLIC_URL) console.log(`[QR] Abra: ${PUBLIC_URL}/qr-plain`);
-  try { qrcodeTerminal.generate(qr, { small:true }); } catch {}
+  console.log('[QR] Aguardando leitura…', PUBLIC_URL ? `(${PUBLIC_URL}/qr-plain)` : '');
+  try { qrcodeTerminal.generate(qr, { small: true }); } catch {}
 });
 
 client.on('ready', () => {
@@ -147,21 +147,14 @@ client.on('ready', () => {
 });
 
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
-client.on('disconnected', (r) => {
-  console.error('[DISCONNECTED]', r);
-  isReady = false;
-});
+client.on('disconnected', (r) => { console.error('[DISCONNECTED]', r); isReady = false; });
 
-client.initialize();
-
-
-// ===== Utils (se quiser usar em outras partes) =====
+// ===== Utils (mantidas)
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
-
-// ===== Cards / Textos =====
+// ===== Cards / Textos (mantidos)
 const menuText = (nome = '') => 
 `Olá ${firstName(nome)}! 👋
 
@@ -179,7 +172,7 @@ Escolha uma opção para descobrir mais sobre a Madala CF (envie o número):
 `;
 
 function cfPosMenu(nome = '') {
-  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
+  const n = firstName(nome);
   const prefixo = n ? `${n}, ` : '';
   return `${prefixo}Escolha uma opção (digite a palavra):
 • *Mais*   → 📊 Planos e valores
@@ -189,7 +182,7 @@ function cfPosMenu(nome = '') {
 }
 
 function menu_rápido(nome = '') {
-  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
+  const n = firstName(nome);
   const prefixo = n ? `${n}, ` : '';
   return `${prefixo}Escolha uma opção (digite a palavra):
 • *Menu*   → 🔙 Voltar ao menu inicial
@@ -197,7 +190,7 @@ function menu_rápido(nome = '') {
 }
 
 function menu_agendamento(nome = '') {
-  const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(' ')[0]);
+  const n = firstName(nome);
   const prefixo = n ? `${n}, ` : '';
   return `${prefixo}Escolha uma opção (digite a palavra):
 • *Marcar* → 🗓️ Agendar sua aula experimental
@@ -206,10 +199,9 @@ function menu_agendamento(nome = '') {
 }
 
 // helper p/ sequência dos cards
-// helper (declare UMA vez no arquivo)
 const RESPOSTAS = {
   comoFunciona: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     const titulo = `*COMO FUNCIONA O CROSSFIT${n ? `, ${n}` : ''}?*`;
     return `${titulo}
 
@@ -227,7 +219,7 @@ https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
   },
 
   planos: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     const titulo = n
       ? `*Bora, ${n}, escolher seu plano?* (CrossFit Premium)`
       : `*Bora escolher seu plano?* (CrossFit Premium)`;
@@ -241,14 +233,14 @@ Formas de pagamento: cartão, PIX e boleto.`;
   },
 
   agendarCrossfit: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     return `🗓️ *Agende sua aula experimental de CrossFit*
 ${n ? `${n}, ` : ''}escolha seu melhor horário no link:
 https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
   },
 
   Modalidade_judo: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     return `*Judô* 🥋
 Venha${n ? `, ${n},` : ''} aprender judô com o *Sensei Jeferson* na Madala CF! 👊
 • Aulas às quartas, às 21h (duração: 1h).
@@ -261,7 +253,7 @@ https://calendar.google.com/calendar/u/0/r/month/2025/9/24`;
   },
 
   Eventos_madalacf: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     return `*Eventos*
 Fique por dentro${n ? `, ${n},` : ''} do que rola na Madala CF:
 
@@ -276,7 +268,7 @@ https://calendar.app.google/SEWQHDEavA3huYhYA`;
   },
 
   atendente: (nome = '') => {
-    const n = (typeof firstName === 'function' ? firstName(nome) : (nome || '').trim().split(/\s+/)[0]);
+    const n = firstName(nome);
     return `Este é o contato do *Tchê* (gerente-geral) 👨‍💼
 ${n ? `${n}, ` : ''}pronto para te ajudar com qualquer dúvida ou suporte.
 
@@ -285,7 +277,7 @@ WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1
 Envie uma mensagem e aguarde um momento para o retorno.`;
   },
 
-  // --- Redes sociais: um link por card (garante um preview por mensagem) ---
+  // Redes sociais
   instagram: `*REDES SOCIAIS MADALA CF* 📱
 📸 Instagram: @madalaCF
 https://www.instagram.com/madalacf/`,
@@ -338,6 +330,12 @@ client.on('message', async (msg) => {
     const contact = await msg.getContact();
     const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
     const chatId  = msg.from;
+
+    // ⬇️ ANEXOS PRIMEIRO
+    if (msg.hasMedia || msg.type === 'image' || msg.type === 'document') {
+      await msg.reply('Obrigado! Estamos anexando documento no sistema.');
+      return;
+    }
 
     // Normalização
     const rawText   = (msg.body || '').toString().trim();
@@ -526,49 +524,17 @@ client.on('message', async (msg) => {
   }
 });
 
+// Inicializa por último (melhor prática)
+client.initialize();
 
-
-// ===== EXPRESS / HEALTH / QR WEB =====
-const QR_SECRET = process.env.QR_SECRET || '';
-
-function checkQrAuth(req, res, next) {
-  if (!QR_SECRET) return next(); // se não definir QR_SECRET, libera acesso
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const token = req.query.token || req.headers['x-qr-token'] || bearer;
-  if (token === QR_SECRET) return next();
-  return res.status(401).send('Unauthorized');
-}
-
-
-// Exibe o QR no navegador quando disponível
-// Acesse: https://SEU_DOMINIO/qr?token=SEU_TOKEN (se definir QR_SECRET)
-app.get('/whatsapp-qr', async (req, res) => {
+// ===== Encerramento gracioso (Koyeb/containers) =====
+process.on('SIGTERM', async () => {
   try {
-    if (QR_SECRET && req.query.token !== QR_SECRET) {
-      return res.status(401).send('Não autorizado');
-    }
-    if (!latestQR) {
-      return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
-    }
-    const dataUrl = await QRCode.toDataURL(latestQR);
-    res.type('text/html; charset=utf-8').send(`
-      <!doctype html>
-      <html>
-        <head><meta charset="utf-8"><title>QR WhatsApp</title></head>
-        <body style="font-family:system-ui, sans-serif; text-align:center; padding:24px">
-          <h2>Escaneie no WhatsApp → Aparelhos conectados → Conectar um aparelho</h2>
-          <p>Gerado em: ${latestQRAt?.toLocaleString('pt-BR') || '-'}</p>
-          <img src="${dataUrl}" alt="QR WhatsApp" style="max-width:360px; width:100%; height:auto;"/>
-        </body>
-      </html>
-    `);
+    console.log('[SHUTDOWN] encerrando…');
+    await client.destroy();
   } catch (e) {
-    console.error('[QR_ROUTE_ERROR]', e);
-    res.status(500).send('Falha ao gerar/exibir o QR.');
+    console.error('[SHUTDOWN] erro', e);
+  } finally {
+    process.exit(0);
   }
 });
-
-
-// Logs de erros não tratados
-process.on('unhandledRejection', (e) => console.error('UnhandledRejection:', e));
-process.on('uncaughtException', (e) => console.error('UncaughtException:', e));
