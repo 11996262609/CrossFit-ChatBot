@@ -1,6 +1,6 @@
 // ========== IMPORTS ==========
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js'); // mantém LocalAuth, remove List
+const { Client, LocalAuth } = require('whatsapp-web.js'); // mantém LocalAuth
 const fs = require('fs');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
@@ -20,6 +20,14 @@ let isReady = false;
 const PUBLIC_URL =
   process.env.PUBLIC_URL ||
   (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
+
+  // ========== DONO / ALERTAS ==========
+const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511996262609').replace(/\D/g, ''); // seu número (só dígitos)
+const OWNER_JID = `${OWNER_NUMBER}@c.us`; // JID do WhatsApp (ex.: 5511996262609@c.us)
+
+// helper: extrai só os dígitos do JID do cliente para montar link clicável (wa.me)
+const jidToNumber = (jid) => String(jid || '').replace('@c.us', '');
+
 
 // ========== HTTP ==========
 const app = express();
@@ -125,6 +133,9 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Health-check na porta ${PORT}`));
 const DATA_PATH = process.env.WWEBJS_DATA_PATH || './.wwebjs_auth';
 const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
 
+// (1) Dono/operador que receberá alertas de handoff
+const OWNER_ID = OWNER_NUMBER ? `${OWNER_NUMBER}@c.us` : null;
+
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
@@ -175,6 +186,48 @@ client.on('disconnected', (r) => { console.error('[DISCONNECTED]', r); isReady =
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
+
+// ========= Helpers p/ alerta ao operador =========
+function formatPhoneBR(waid) {
+  if (!waid) return '';
+  const m = waid.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
+  return `+${waid}`;
+}
+
+function buildVCard({ fn, waid }) {
+  const display = formatPhoneBR(waid);
+  return (
+`BEGIN:VCARD
+VERSION:3.0
+FN:${fn || display}
+TEL;type=CELL;type=VOICE;waid=${waid}:${display}
+END:VCARD`
+  );
+}
+
+async function notifyOwnerWithContact({ nome, waid, ultimaMsg }) {
+  if (!OWNER_ID) {
+    console.warn('[NOTIFY] OWNER_NUMBER não configurado; alerta ignorado.');
+    return;
+  }
+  try {
+    const quando = new Date().toLocaleString('pt-BR');
+    const resumo =
+      `🔔 *Handoff solicitado*\n` +
+      `Contato: ${nome || '(sem nome)'}\n` +
+      `Número: ${formatPhoneBR(waid)}\n` +
+      (ultimaMsg ? `Última mensagem: "${(ultimaMsg || '').trim()}"\n` : '') +
+      `Quando: ${quando}\n` +
+      `Abrir chat: https://wa.me/${waid}`;
+
+    await client.sendMessage(OWNER_ID, resumo);
+    const vcard = buildVCard({ fn: nome, waid });
+    await client.sendMessage(OWNER_ID, vcard);
+  } catch (e) {
+    console.error('[NOTIFY] Falha ao enviar alerta/contato ao dono:', e?.message || e);
+  }
+}
 
 // ===== Textos
 const menuText = (nome = '') => 
@@ -319,6 +372,8 @@ client.on('message', async (msg) => {
   try {
     // Ignora grupos/status
     if (!msg.from.endsWith('@c.us')) return;
+        // evita loop ao enviar alerta para você mesmo
+    if (msg.fromMe || msg.from === OWNER_JID) return;
 
     const chat    = await msg.getChat();
     const contact = await msg.getContact();
@@ -426,16 +481,7 @@ client.on('message', async (msg) => {
         return;
       }
 
-      // 0) Atendente
-      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
-        await typing(chat);
-        const atendenteMsg = (typeof RESPOSTAS?.atendente === 'function') ? RESPOSTAS.atendente(nome) : RESPOSTAS.atendente;
-        if (atendenteMsg) await client.sendMessage(chatId, atendenteMsg);
 
-        await typing(chat);
-        await client.sendMessage(chatId, menu_rápido(nome));
-        return;
-      }
 
       // Fallback no MAIN
       await typing(chat);
@@ -443,6 +489,35 @@ client.on('message', async (msg) => {
       await enviarMenu(msg, chat, nome);
       return;
     }
+    
+      // 0) Atendente (handoff humano no MESMO número)
+      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
+        await typing(chat);
+
+        // 1) Confirma para o cliente
+        await client.sendMessage(chatId, 'Estamos direcionando seu atendimento. Aguarde o retorno…');
+
+        // 2) Alerta interno para VOCÊ (mesmo número, conversa "mensagem para você")
+        const numeroCliente = jidToNumber(msg.from); // ex: 5511999...
+        const ultimaMsg = (msg.body || '').trim();
+        const alerta = [
+          '🔔 *Novo cliente aguardando atendimento*',
+          `• *Nome:* ${nome || '-'}`,
+          `• *Número:* https://wa.me/${numeroCliente}`,
+          ultimaMsg ? `• *Última mensagem:* "${ultimaMsg}"` : null,
+          `• *Quando:* ${new Date().toLocaleString('pt-BR')}`,
+        ].filter(Boolean).join('\n');
+
+        try {
+          await client.sendMessage(OWNER_JID, alerta);
+        } catch (e) {
+          console.error('[HANDOFF] Falha ao alertar o owner:', e);
+        }
+
+        // 3) (Opcional) reexibir um menu curto
+        // await client.sendMessage(chatId, menu_rápido(nome));
+        return;
+      }
 
     // ===== CF_MENU (pós-menu do CrossFit) =====
     if (st === 'CF_MENU') {
