@@ -1,9 +1,10 @@
 // ========== IMPORTS ==========
 const express = require('express');
-const { Client, LocalAuth, List } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js'); // mantém LocalAuth, remove List
 const fs = require('fs');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
+const puppeteer = require('puppeteer');
 
 // Logs globais
 process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
@@ -87,7 +88,7 @@ app.get('/qr.png', async (_req, res) => {
   }
 });
 
-// Proteção opcional por token na rota abaixo (mantida como no seu código)
+// Proteção opcional por token
 const QR_SECRET = process.env.QR_SECRET || '';
 function checkQrAuth(req, res, next) {
   if (!QR_SECRET) return next();
@@ -97,7 +98,7 @@ function checkQrAuth(req, res, next) {
   return res.status(401).send('Unauthorized');
 }
 
-app.get('/whatsapp-qr', checkQrAuth, async (req, res) => {
+app.get('/whatsapp-qr', checkQrAuth, async (_req, res) => {
   try {
     if (!latestQR) return res.status(404).send('Sem QR disponível (já conectado ou aguardando reinício).');
     const dataUrl = await QRCode.toDataURL(latestQR);
@@ -122,16 +123,37 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Health-check na porta ${PORT}`));
 
 // ========== WHATSAPP (FINAL LIMPO) ==========
 const DATA_PATH = process.env.WWEBJS_DATA_PATH || './.wwebjs_auth';
-if (!fs.existsSync(DATA_PATH)) fs.mkdirSync(DATA_PATH, { recursive: true });
+const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    headless: true,                 // ou 'new' no Node 20+
+    executablePath: CHROME_PATH,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--window-size=800,600',
+      '--remote-debugging-pipe',
+      '--no-zygote'
+    ],
   },
 });
 
+// QR / status
 client.on('qr', (qr) => {
   latestQR = qr;
   latestQRAt = new Date();
@@ -149,12 +171,12 @@ client.on('ready', () => {
 client.on('auth_failure', (m) => console.error('[AUTH_FAILURE]', m));
 client.on('disconnected', (r) => { console.error('[DISCONNECTED]', r); isReady = false; });
 
-// ===== Utils (mantidas)
+// ===== Utils
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
-// ===== Cards / Textos (mantidos)
+// ===== Textos
 const menuText = (nome = '') => 
 `Olá ${firstName(nome)}! 👋
 
@@ -207,9 +229,9 @@ const RESPOSTAS = {
 
 • Estamos abertos de seg. a sáb., das 6h às 21h.
 • Treinos em grupo, com coach supervisionando a turma (todos os níveis).
-• Aula com aquecimento.
 • Escalas: Iniciante, Intermediário e Avançado.
-• Avaliação inicial para ajustar cargas e movimentos.
+• Aceitamos apenas pagamentos no cartão Débito/crédito, PIX.
+• Não trabalhamos com Gynpass ou qualquer outro tipo de convênio.
 
 📍 Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9
 
@@ -277,47 +299,19 @@ WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1
 Envie uma mensagem e aguarde um momento para o retorno.`;
   },
 
-  // Redes sociais
-  instagram: `*REDES SOCIAIS MADALA CF* 📱
-📸 Instagram: @madalaCF
-https://www.instagram.com/madalacf/`,
-
-  facebook: `*REDES SOCIAIS MADALA CF* 📱
-👍 Facebook: Madala_CF
-https://www.facebook.com/madalacf/?locale=pt_BR`,
-
+  // Redes sociais (link atualizado)
   site: `*REDES SOCIAIS MADALA CF* 📱
 🌐 Site oficial
-https://madalacf.com.br`,
+https://www.madalacf.com.br/`,
 };
 
 // ===== Estado simples por chat =====
 const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
 
-// ===== Menu (List) com fallback =====
+// ===== Menu em texto (sem List) =====
 async function enviarMenu(msg, chat, nome) {
   await typing(chat);
-
-  // (1) Fallback em texto
   await client.sendMessage(msg.from, menuText(nome));
-
-  // (2) Tenta enviar o List
-  try {
-    const sections = [{
-      title: 'Menu principal',
-      rows: [
-        { id: '1', title: '1 - 🏋️ Como funcionam as aulas de CrossFit' },
-        { id: '2', title: '2 - 🥋 Aulas de judô com Sensei Jeferson (quartas, 21h)' },
-        { id: '3', title: '3 - 🌐 Redes sociais Madala CF' },
-        { id: '4', title: '4 - 🏆 Eventos Madala CF' },
-        { id: '0', title: '0 - ☎ Falar com Tchê (gerente geral)' },
-      ],
-    }];
-    const list = new List('Toque em "Ver opções" para abrir a lista.', 'Ver opções', sections, 'Madala CF', 'Ou digite o número aqui.');
-    await client.sendMessage(msg.from, list);
-  } catch (e) {
-    console.warn('List não enviado (seguindo apenas com o texto do menu).', e?.message || e);
-  }
 }
 
 // ===== Router principal (UM ÚNICO listener) =====
@@ -331,7 +325,7 @@ client.on('message', async (msg) => {
     const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
     const chatId  = msg.from;
 
-    // ⬇️ ANEXOS PRIMEIRO
+    // ⬇️ ANEXOS PRIMEIRO (não exibe menu mesmo que venha texto junto)
     if (msg.hasMedia || msg.type === 'image' || msg.type === 'document') {
       await msg.reply('Obrigado! Estamos anexando documento no sistema.');
       return;
@@ -342,9 +336,12 @@ client.on('message', async (msg) => {
     const lowerText = rawText.toLowerCase();
     let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // Se a mensagem for resposta de List
-    if (msg.type === 'list_response' && msg.selectedRowId) {
-      asciiText = String(msg.selectedRowId).trim().toLowerCase();
+    // Se mandou comprovante por texto (sem anexo), não abre menu
+    const looksLikeReceipt =
+      /(comprovante|pagamento|paguei|pix|boleto|nota|nf|recibo)/i.test(rawText);
+    if (looksLikeReceipt) {
+      await msg.reply('Obrigado! Estamos anexando documento no sistema.');
+      return;
     }
 
     // Gatilho de saudação/menu
@@ -408,20 +405,12 @@ client.on('message', async (msg) => {
         return;
       }
 
-      // 3) Redes sociais — envia cards em sequência
+      // 3) Redes sociais — envia card único (site)
       if (asciiText === '3' || lowerText.startsWith('3 - 🌐')) {
         await typing(chat);
-
-        const ordem = ['instagram', 'facebook', 'site'];
-        for (const key of ordem) {
-          const texto = (typeof RESPOSTAS?.[key] === 'function') ? RESPOSTAS[key](nome) : RESPOSTAS[key];
-          if (!texto) continue;
-
-          await client.sendMessage(chatId, texto);
-          await typing(chat);
-          await delay(1200); // pequeno intervalo para o preview carregar
-        }
-
+        const texto = RESPOSTAS.site;
+        if (texto) await client.sendMessage(chatId, texto);
+        await typing(chat);
         await client.sendMessage(chatId, menu_rápido(nome));
         return;
       }
