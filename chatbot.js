@@ -183,6 +183,22 @@ const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
+// ===== Helpers p/ alerta com vCard =====
+function formatPhoneBR(waid) {
+  if (!waid) return '';
+  const m = waid.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
+  return `+${waid}`;
+}
+function buildVCard({ fn, waid }) {
+  const display = formatPhoneBR(waid);
+  return `BEGIN:VCARD
+VERSION:3.0
+FN:${fn || display}
+TEL;type=CELL;type=VOICE;waid=${waid}:${display}
+END:VCARD`;
+}
+
 // ===== Textos
 const menuText = (nome = '') => 
 `Olá ${firstName(nome)}! 👋
@@ -313,11 +329,14 @@ https://www.madalacf.com.br/`,
 };
 
 // ===== Estado simples por chat =====
-const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' }
+const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' | 'AWAIT_HUMAN' }
+const STATES = { MAIN: 'MAIN', CF_MENU: 'CF_MENU', AWAIT_HUMAN: 'AWAIT_HUMAN' };
+
+// ===== Regex de saudações (asciiText já vem sem acentos) =====
+const SAUDACOES_RE = /\b(menu|oi|ola|oie|hey|eai|bom dia|boa tarde|boa noite|hello|hi|alo|aloo|opa|e ae|e aew|eae|fala|falae|salve|yo|blz|beleza|tudo bem|como vai|iniciar|inicio|start|comecar|ajuda|help|suporte|atendimento|quero falar|quero atendimento|preciso de ajuda)\b/i;
 
 // ===== Menu em texto (sem List) =====
-async function enviarMenu(msg, chat, nome) {
-  await typing(chat);
+async function enviarMenu(msg, _chat, nome) {
   await client.sendMessage(msg.from, menuText(nome));
 }
 
@@ -335,7 +354,38 @@ client.on('message', async (msg) => {
     const nome    = contact.pushname || contact.name || contact.shortName || contact.number || '';
     const chatId  = msg.from;
 
-    // ⬇️ ANEXOS PRIMEIRO (não exibe menu mesmo que venha texto junto)
+    // Estado atual
+    const current = estado[chatId] || STATES.MAIN;
+
+    // ===== ETAPA 2 DO HANDOFF: aguardando descrição =====
+    if (current === STATES.AWAIT_HUMAN) {
+      const assunto = (msg.body || '').trim() || '[sem texto]';
+      const numeroCliente = jidToNumber(msg.from);
+
+      // 1) Notifica você (no mesmo número) com texto + vCard
+      const alerta = [
+        '🔔 *Novo cliente aguardando atendimento*',
+        `• *Nome:* ${nome || '-'}`,
+        `• *Número:* https://wa.me/${numeroCliente}`,
+        `• *Assunto informado:* "${assunto}"`,
+        `• *Quando:* ${new Date().toLocaleString('pt-BR')}`,
+      ].join('\n');
+
+      try {
+        await client.sendMessage(OWNER_JID, alerta);
+        const vcard = buildVCard({ fn: nome, waid: numeroCliente });
+        await client.sendMessage(OWNER_JID, vcard);
+      } catch (e) {
+        console.error('[HANDOFF] Falha ao alertar o owner:', e);
+      }
+
+      // 2) Confirma para o cliente
+      await client.sendMessage(chatId, 'Aguarde, estamos direcionando seu atendimento.');
+      estado[chatId] = STATES.MAIN;
+      return;
+    }
+
+    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo de handoff)
     if (msg.hasMedia || msg.type === 'image' || msg.type === 'document') {
       await msg.reply('Obrigado! Estamos anexando documento no sistema.');
       return;
@@ -354,19 +404,48 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // Gatilho de saudação/menu
-    const ehSaudacao = /(menu|dia|tarde|noite|oi|ola|olá|oie|hey|eai)/i.test(asciiText);
+    // ===== INTENTS PRIORITÁRIAS (antes de saudação) =====
+    const wantsPrice = /\b(preco|preço|valor|valores|tabela|quanto|mensal|mensalidade|plano|planos?)\b/i.test(asciiText);
+    const wantsSchedule = /\b(agendar|agendamento|marcar|agenda|horario|horarios|disponibilidade|aula experimental|trial|drop[ -]?in)\b/i.test(asciiText);
+
+    if (wantsPrice) {
+      await typing(chat);
+      const planosMsg = (typeof RESPOSTAS?.planos === 'function') ? RESPOSTAS.planos(nome) : RESPOSTAS.planos;
+      if (planosMsg) await client.sendMessage(chatId, planosMsg);
+      await client.sendMessage(chatId, 'Posso agendar sua aula experimental ou voltar ao menu. Digite *marcar* ou *menu*.');
+      return;
+    }
+
+    if (wantsSchedule) {
+      await typing(chat);
+      const agendaMsg = (typeof RESPOSTAS?.agendarCrossfit === 'function') ? RESPOSTAS.agendarCrossfit(nome) : RESPOSTAS.agendarCrossfit;
+      if (agendaMsg) await client.sendMessage(chatId, agendaMsg);
+      await client.sendMessage(chatId, 'Se quiser, digite *mais* para ver planos e valores ou *menu* para voltar.');
+      return;
+    }
+
+    // ===== Gatilho de saudação/menu (vem DEPOIS dos intents) =====
+    const ehSaudacao = SAUDACOES_RE.test(asciiText);
     if (ehSaudacao) {
-      estado[chatId] = 'MAIN';
+      estado[chatId] = STATES.MAIN;
       await enviarMenu(msg, chat, nome);
       return;
     }
 
-    // Estado atual
-    const st = estado[chatId] || 'MAIN';
+    const st = estado[chatId] || STATES.MAIN;
 
     // ===== MAIN (menu principal) =====
-    if (st === 'MAIN') {
+    if (st === STATES.MAIN) {
+      // 0) Atendente (inicia handoff → pede descrição)
+      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
+        await typing(chat);
+        await client.sendMessage(
+          chatId,
+          'Certo! Para direcionarmos seu atendimento, por favor descreva *em uma única mensagem* o assunto/dúvida (ex.: "cancelamento de plano", "erro no pagamento", "ajuda no agendamento").'
+        );
+        estado[chatId] = STATES.AWAIT_HUMAN;
+        return;
+      }
 
       // atalhos texto
       if (/^\s*mais\b/.test(lowerText)) {
@@ -436,32 +515,6 @@ client.on('message', async (msg) => {
         return;
       }
 
-      // 0) Atendente (handoff humano no MESMO número)
-      if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
-        await typing(chat);
-
-        // 1) Confirma para o cliente
-        await client.sendMessage(chatId, 'Estamos direcionando seu atendimento. Aguarde o retorno…');
-
-        // 2) Alerta interno para VOCÊ (mesmo número, conversa "mensagem para você")
-        const numeroCliente = jidToNumber(msg.from); // ex: 5511999...
-        const ultimaMsg = (msg.body || '').trim();
-        const alerta = [
-          '🔔 *Novo cliente aguardando atendimento*',
-          `• *Nome:* ${nome || '-'}`,
-          `• *Número:* https://wa.me/${numeroCliente}`,
-          ultimaMsg ? `• *Última mensagem:* "${ultimaMsg}"` : null,
-          `• *Quando:* ${new Date().toLocaleString('pt-BR')}`,
-        ].filter(Boolean).join('\n');
-
-        try {
-          await client.sendMessage(OWNER_JID, alerta);
-        } catch (e) {
-          console.error('[HANDOFF] Falha ao alertar o owner:', e);
-        }
-        return;
-      }
-
       // Fallback no MAIN
       await typing(chat);
       await client.sendMessage(chatId, 'Não entendi. Toque em "Ver opções" ou digite *menu* para abrir o menu.');
@@ -470,7 +523,7 @@ client.on('message', async (msg) => {
     }
 
     // ===== CF_MENU (pós-menu do CrossFit) =====
-    if (st === 'CF_MENU') {
+    if (st === STATES.CF_MENU) {
       // "mais" → planos
       if ([
         'mais', 'planos', 'plano', 'valores', 'valor',
@@ -516,7 +569,7 @@ client.on('message', async (msg) => {
         'ir para o menu', 'ir ao menu', 'menu por favor',
         '/menu', '/start', 'start', 'back'
       ].includes(asciiText)) {
-        estado[chatId] = 'MAIN';
+        estado[chatId] = STATES.MAIN;
         await enviarMenu(msg, chat, nome);
         return;
       }
@@ -524,7 +577,7 @@ client.on('message', async (msg) => {
       // "sair" → encerra (reseta estado)
       if (asciiText === 'sair') {
         await client.sendMessage(chatId, 'Até logo! 👋');
-        estado[chatId] = 'MAIN';
+        estado[chatId] = STATES.MAIN;
         return;
       }
 
