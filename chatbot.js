@@ -22,7 +22,7 @@ const PUBLIC_URL =
   (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
 
 // ========== DONO / ALERTAS ==========
-const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511996262609').replace(/\D/g, ''); // seu número (só dígitos)
+const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511977181677').replace(/\D/g, ''); // seu número (só dígitos)
 const OWNER_JID = `${OWNER_NUMBER}@c.us`; // JID do WhatsApp (ex.: 5511996262609@c.us)
 
 // helper: extrai só os dígitos do JID do cliente para montar link clicável (wa.me)
