@@ -183,22 +183,6 @@ const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
-// ===== Helpers p/ alerta com vCard =====
-function formatPhoneBR(waid) {
-  if (!waid) return '';
-  const m = waid.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
-  if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
-  return `+${waid}`;
-}
-function buildVCard({ fn, waid }) {
-  const display = formatPhoneBR(waid);
-  return `BEGIN:VCARD
-VERSION:3.0
-FN:${fn || display}
-TEL;type=CELL;type=VOICE;waid=${waid}:${display}
-END:VCARD`;
-}
-
 // ===== Textos
 const menuText = (nome = '') => 
 `Olá ${firstName(nome)}! 👋
@@ -362,7 +346,7 @@ client.on('message', async (msg) => {
       const assunto = (msg.body || '').trim() || '[sem texto]';
       const numeroCliente = jidToNumber(msg.from);
 
-      // 1) Notifica você (no mesmo número) com texto + vCard
+      // 1) Notifica você (no mesmo número) — SOMENTE a mensagem de texto
       const alerta = [
         '🔔 *Novo cliente aguardando atendimento*',
         `• *Nome:* ${nome || '-'}`,
@@ -373,8 +357,6 @@ client.on('message', async (msg) => {
 
       try {
         await client.sendMessage(OWNER_JID, alerta);
-        const vcard = buildVCard({ fn: nome, waid: numeroCliente });
-        await client.sendMessage(OWNER_JID, vcard);
       } catch (e) {
         console.error('[HANDOFF] Falha ao alertar o owner:', e);
       }
