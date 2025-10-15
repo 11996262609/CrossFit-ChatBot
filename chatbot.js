@@ -258,7 +258,11 @@ https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
 💰 Semestral: R$489,90/mês
 💰 Anual: R$399,99/mês
 
-Formas de pagamento: cartão, PIX e boleto.`;
+Formas de pagamento: cartão, PIX e boleto.
+Não trabalhamos com Gynpass ou qualquer outro convênio.
+
+✅ Agende sua aula experimental:
+https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
   },
 
   agendarCrossfit: (nome = '') => {
@@ -313,11 +317,17 @@ https://www.madalacf.com.br/`,
 };
 
 // ===== Estado simples por chat =====
-const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' | 'AWAIT_HUMAN' }
-const STATES = { MAIN: 'MAIN', CF_MENU: 'CF_MENU', AWAIT_HUMAN: 'AWAIT_HUMAN' };
+const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' | 'AWAIT_HUMAN' | 'HUMAN_HANDOFF' }
+const STATES = { MAIN: 'MAIN', CF_MENU: 'CF_MENU', AWAIT_HUMAN: 'AWAIT_HUMAN', HUMAN_HANDOFF: 'HUMAN_HANDOFF' };
+
+// Silêncio pós-handoff (padrão 30 min) — configurável por env HANDOFF_SILENCE_MS
+const HANDOFF_SILENCE_MS = Number(process.env.HANDOFF_SILENCE_MS || 30 * 60 * 1000);
+const handoffSilenceUntil = Object.create(null);
 
 // ===== Regex de saudações (asciiText já vem sem acentos) =====
 const SAUDACOES_RE = /\b(menu|oi|ola|oie|hey|eai|bom dia|boa tarde|boa noite|hello|hi|alo|aloo|opa|e ae|e aew|eae|fala|falae|salve|yo|blz|beleza|tudo bem|como vai|iniciar|inicio|start|comecar|ajuda|help|suporte|atendimento|quero falar|quero atendimento|preciso de ajuda)\b/i;
+// Palavras que "acordam" o bot durante o silêncio
+const WAKE_RE = /\b(menu|voltar|oi|ola|oie|ajuda|help|start|iniciar|inicio)\b/i;
 
 // ===== Menu em texto (sem List) =====
 async function enviarMenu(msg, _chat, nome) {
@@ -341,9 +351,33 @@ client.on('message', async (msg) => {
     // Estado atual
     const current = estado[chatId] || STATES.MAIN;
 
+    // Normalização
+    const rawText   = (msg.body || '').toString().trim();
+    const lowerText = rawText.toLowerCase();
+    let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // ===== SILÊNCIO PÓS-HANDOFF =====
+    if (current === STATES.HUMAN_HANDOFF) {
+      const now = Date.now();
+      const until = handoffSilenceUntil[chatId] || 0;
+      const wake = WAKE_RE.test(asciiText);
+
+      if (now < until && !wake) {
+        // mantém silêncio absoluto
+        return;
+      }
+      // Expirou ou o cliente pediu para voltar
+      estado[chatId] = STATES.MAIN;
+      delete handoffSilenceUntil[chatId];
+      if (wake) {
+        await enviarMenu(msg, chat, nome);
+      }
+      return;
+    }
+
     // ===== ETAPA 2 DO HANDOFF: aguardando descrição =====
     if (current === STATES.AWAIT_HUMAN) {
-      const assunto = (msg.body || '').trim() || '[sem texto]';
+      const assunto = rawText || '[sem texto]';
       const numeroCliente = jidToNumber(msg.from);
 
       // 1) Notifica você (no mesmo número) — SOMENTE a mensagem de texto
@@ -361,22 +395,18 @@ client.on('message', async (msg) => {
         console.error('[HANDOFF] Falha ao alertar o owner:', e);
       }
 
-      // 2) Confirma para o cliente
+      // 2) Confirma para o cliente e entra em SILÊNCIO
       await client.sendMessage(chatId, 'Aguarde, estamos direcionando seu atendimento.');
-      estado[chatId] = STATES.MAIN;
+      estado[chatId] = STATES.HUMAN_HANDOFF;
+      handoffSilenceUntil[chatId] = Date.now() + HANDOFF_SILENCE_MS;
       return;
     }
 
-    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo de handoff)
+    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo normal)
     if (msg.hasMedia || msg.type === 'image' || msg.type === 'document') {
       await msg.reply('Obrigado! Estamos anexando documento no sistema.');
       return;
     }
-
-    // Normalização
-    const rawText   = (msg.body || '').toString().trim();
-    const lowerText = rawText.toLowerCase();
-    let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     // Se mandou comprovante por texto (sem anexo), não abre menu
     const looksLikeReceipt =
