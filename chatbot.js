@@ -1,7 +1,8 @@
 // ========== IMPORTS ==========
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js'); // mantém LocalAuth
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js'); // +MessageMedia
 const fs = require('fs');
+const path = require('path'); // novo
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
 const puppeteer = require('puppeteer');
@@ -25,8 +26,44 @@ const PUBLIC_URL =
 const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511977181677').replace(/\D/g, ''); // seu número (só dígitos)
 const OWNER_JID = `${OWNER_NUMBER}@c.us`; // JID do WhatsApp (ex.: 5511996262609@c.us)
 
+// ========= GERENTE / ENCAMINHAMENTO DE ANEXOS =========
+const MANAGER_NUMBER = (process.env.MANAGER_NUMBER || '5511985910030').replace(/\D/g, '');
+const MANAGER_JID = `${MANAGER_NUMBER}@c.us`;
+
 // helper: extrai só os dígitos do JID do cliente para montar link clicável (wa.me)
 const jidToNumber = (jid) => String(jid || '').replace('@c.us', '');
+
+// ========== PERSISTÊNCIA BÁSICA ==========
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch {}
+
+const DB_FILE = process.env.DB_FILE || './db.json';
+function loadDB() {
+  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
+  catch { return { users: {} }; }
+}
+function saveDB(db) {
+  try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); } catch {}
+}
+const db = loadDB();
+
+function recordMediaFrom(chatId, nome) {
+  db.users[chatId] = db.users[chatId] || {};
+  db.users[chatId].jid = chatId;
+  db.users[chatId].name = nome || db.users[chatId].name || '';
+  db.users[chatId].lastMediaAt = new Date().toISOString();
+  saveDB(db);
+}
+
+// ===== Follow-up (30 dias)
+const FOLLOWUP_DAYS = Number(process.env.FOLLOWUP_DAYS || 30);
+const CHECK_EVERY_MS = Number(process.env.CHECK_EVERY_MS || 6 * 60 * 60 * 1000); // 6h
+
+const fmtFirst = (v) => (v ? String(v).trim().split(/\s+/)[0] : '');
+const reminderText = (nome = '') =>
+  `Olá! Tudo bem ${fmtFirst(nome)}? Identificamos que o registro de pagamento da mensalidade não foi enviado. ` +
+  `Envie-nos o seu comprovante para que possamos anexar em nosso banco de dados e darmos continuidade ao acesso às aulas e à academia MadalaCF. ` +
+  `Equipe Madala agradece. Caso já tenha efetuado o pagamento, retorne enviando "Sim".`;
 
 // ========== HTTP ==========
 const app = express();
@@ -238,7 +275,7 @@ const RESPOSTAS = {
 • Treinos em grupo, com coach supervisionando a turma (todos os níveis).
 • Escalas: Iniciante, Intermediário e Avançado.
 • Aceitamos apenas pagamentos no cartão Débito/crédito, PIX.
-• Não trabalhamos com Gynpass ou qualquer outro tipo de convênio.
+• Não trabalhamos com Gympass ou qualquer outro tipo de convênio.
 
 📍 Localização: https://maps.app.goo.gl/nyDBAPzNLLBHYWMJ9
 
@@ -259,7 +296,7 @@ https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
 💰 Anual: R$399,99/mês
 
 Formas de pagamento: cartão, PIX e boleto.
-Não trabalhamos com Gynpass ou qualquer outro convênio.
+Não trabalhamos com Gympass ou qualquer outro convênio.
 
 ✅ Agende sua aula experimental:
 https://calendar.app.google/rePcx9VnTSRc1X9Z7`;
@@ -402,9 +439,54 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo normal)
-    if (msg.hasMedia || msg.type === 'image' || msg.type === 'document') {
-      await msg.reply('Obrigado! Estamos anexando documento no sistema.');
+    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo normal) — salva, responde e encaminha para a gerente
+    if (
+      msg.hasMedia ||
+      ['image','document','audio','video','ptt','sticker'].includes(msg.type)
+    ) {
+      try {
+        const numero  = jidToNumber(msg.from);
+
+        const media = await msg.downloadMedia(); // { data(base64), mimetype, filename? }
+        if (media && media.data) {
+          const ext  = (media.mimetype?.split('/')[1] || 'bin').replace(/[^a-z0-9]+/gi,'');
+          const base = media.filename ? media.filename.replace(/\.[^.]+$/, '') : 'anexo';
+          const fileName = `${Date.now()}_${numero}_${base}.${ext}`;
+          const filePath = path.join(UPLOAD_DIR, fileName);
+          fs.writeFileSync(filePath, Buffer.from(media.data, 'base64'));
+
+          // Confirma ao cliente
+          await msg.reply('Obrigado! Estamos anexando seu documento em nosso banco de dados.');
+
+          // Registra último envio p/ follow-up
+          recordMediaFrom(msg.from, (await msg.getContact()).pushname || '');
+
+          // Encaminha para a gerente
+          try {
+            const mm = MessageMedia.fromFilePath(filePath);
+            await client.sendMessage(MANAGER_JID, mm, { caption: `Anexo de ${numero}` });
+          } catch (e) {
+            console.error('[MANAGER_SEND_FILE_ERR]', e);
+          }
+
+          // (Opcional) alerta resumido para o owner
+          try {
+            const alerta = [
+              '📎 *Novo anexo recebido*',
+              `• *Número:* https://wa.me/${numero}`,
+              `• *Tipo:* ${media.mimetype || '-'}`,
+              `• *Arquivo:* ${fileName}`,
+              `• *Quando:* ${new Date().toLocaleString('pt-BR')}`
+            ].join('\n');
+            await client.sendMessage(OWNER_JID, alerta);
+          } catch {}
+        } else {
+          await msg.reply('Recebi sua mensagem, mas não consegui baixar o arquivo. Pode reenviar?');
+        }
+      } catch (e) {
+        console.error('[ATTACH_ERR]', e);
+        await msg.reply('Não consegui processar o anexo agora. Tente novamente em instantes.');
+      }
       return;
     }
 
@@ -605,6 +687,36 @@ client.on('message', async (msg) => {
 
 // Inicializa por último (melhor prática)
 client.initialize();
+
+// ===== Follow-ups em 30 dias (agenda recorrente) =====
+async function runFollowups() {
+  const now = Date.now();
+  const limitMs = FOLLOWUP_DAYS * 24 * 60 * 60 * 1000;
+
+  for (const [jid, u] of Object.entries(db.users || {})) {
+    if (!u.lastMediaAt) continue;
+    const lastMedia = new Date(u.lastMediaAt).getTime();
+    if (Number.isNaN(lastMedia)) continue;
+
+    const alreadyRemindedAfterLast =
+      u.lastReminderAt && new Date(u.lastReminderAt).getTime() >= lastMedia;
+
+    if (!alreadyRemindedAfterLast && now - lastMedia >= limitMs) {
+      try {
+        await client.sendMessage(jid, reminderText(u.name || ''));
+        db.users[jid].lastReminderAt = new Date().toISOString();
+        saveDB(db);
+      } catch (e) {
+        console.error('[FOLLOWUP_ERR]', jid, e);
+      }
+    }
+  }
+}
+
+client.on('ready', () => {
+  try { runFollowups(); } catch {}
+  setInterval(() => runFollowups().catch(()=>{}), CHECK_EVERY_MS);
+});
 
 // ===== Encerramento gracioso (Koyeb/containers) =====
 process.on('SIGTERM', async () => {
