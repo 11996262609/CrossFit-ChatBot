@@ -1,8 +1,8 @@
 // ========== IMPORTS ==========
 const express = require('express');
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js'); // +MessageMedia
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const fs = require('fs');
-const path = require('path'); // novo
+const path = require('path');
 const QRCode = require('qrcode');
 const qrcodeTerminal = require('qrcode-terminal');
 const puppeteer = require('puppeteer');
@@ -10,7 +10,6 @@ const puppeteer = require('puppeteer');
 // Logs globais
 process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
 process.on('uncaughtException',  (e) => console.error('[uncaughtException]', e));
-
 console.log('[BOOT] Node', process.version);
 
 // ========== ESTADO ==========
@@ -23,8 +22,8 @@ const PUBLIC_URL =
   (process.env.KOYEB_PUBLIC_DOMAIN ? `https://${process.env.KOYEB_PUBLIC_DOMAIN}` : '');
 
 // ========== DONO / ALERTAS ==========
-const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511977181677').replace(/\D/g, ''); // seu número (só dígitos)
-const OWNER_JID = `${OWNER_NUMBER}@c.us`; // JID do WhatsApp (ex.: 5511996262609@c.us)
+const OWNER_NUMBER = (process.env.OWNER_NUMBER || '5511977181677').replace(/\D/g, '');
+const OWNER_JID = `${OWNER_NUMBER}@c.us`;
 
 // ========= GERENTE / ENCAMINHAMENTO DE ANEXOS =========
 const MANAGER_NUMBER = (process.env.MANAGER_NUMBER || '5511985910030').replace(/\D/g, '');
@@ -165,37 +164,44 @@ app.get('/whatsapp-qr', checkQrAuth, async (_req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Health-check na porta ${PORT}`));
 
-// ========== WHATSAPP (FINAL LIMPO) ==========
+// ========== WHATSAPP ==========
 const DATA_PATH = process.env.WWEBJS_DATA_PATH || './.wwebjs_auth';
 const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH, clientId: 'default' }),
   puppeteer: {
-    headless: true,                 // ou 'new' no Node 20+
+    headless: true, // ou 'new' no Node 20+
     executablePath: CHROME_PATH,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-breakpad',
-      '--disable-component-extensions-with-background-pages',
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+      '--no-first-run', '--no-default-browser-check',
+      '--disable-gpu', '--disable-software-rasterizer', '--disable-extensions',
+      '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad', '--disable-component-extensions-with-background-pages',
       '--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--window-size=800,600',
-      '--remote-debugging-pipe',
-      '--no-zygote'
+      '--hide-scrollbars', '--mute-audio', '--window-size=800,600',
+      '--remote-debugging-pipe', '--no-zygote'
     ],
   },
 });
+
+// ====== DIFERENCIAR MENSAGEM DO BOT VS HUMANA ======
+const lastBotSendTs = Object.create(null);
+const BOT_SEND_GRACE_MS = Number(process.env.BOT_SEND_GRACE_MS || 4000);
+
+// Monkey-patch em sendMessage para marcar que o envio veio do BOT
+const _sendMessage = client.sendMessage.bind(client);
+client.sendMessage = async (to, content, options) => {
+  try {
+    if (typeof to === 'string' && to.endsWith('@c.us')) {
+      lastBotSendTs[to] = Date.now();
+    }
+    return await _sendMessage(to, content, options);
+  } finally {
+    // noop
+  }
+};
 
 // QR / status
 client.on('qr', (qr) => {
@@ -217,11 +223,21 @@ client.on('disconnected', (r) => { console.error('[DISCONNECTED]', r); isReady =
 
 // ===== Utils
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
-const typing = async (chat, ms = 1200) => { await chat.sendStateTyping(); await delay(ms); };
+const typing = async (chat, ms = 1200) => { try { await chat.sendStateTyping(); } catch {} await delay(ms); };
 const firstName = v => (v ? String(v).trim().split(/\s+/)[0] : '');
 
+// ===== Anti-duplicação (debounce simples p/ menus)
+const lastSent = Object.create(null); // { `${chatId}:MENU`: timestamp }
+function shouldSkip(chatId, tag, ms = 5000) {
+  const key = `${chatId}:${tag}`;
+  const now = Date.now();
+  if (lastSent[key] && (now - lastSent[key] < ms)) return true;
+  lastSent[key] = now;
+  return false;
+}
+
 // ===== Textos
-const menuText = (nome = '') => 
+const menuText = (nome = '') =>
 `Olá ${firstName(nome)}! 👋
 
 Seja bem-vindo(a) à família Madala CF! 💪
@@ -234,7 +250,7 @@ Escolha uma opção para descobrir mais sobre a Madala CF (envie o número):
 2 - 🥋 Aulas de judô todas as quartas às 21h
 3 - 🌐 Redes sociais da Madala CF
 4 - 🏆 Eventos da Madala CF
-0 - ☎ Falar com o recepcionista 
+0 - ☎ Falar com o recepcionista
 `;
 
 function cfPosMenu(nome = '') {
@@ -347,7 +363,6 @@ WhatsApp: https://wa.me/qr/LI5TG3DW5XAZF1
 Envie uma mensagem e aguarde um momento para o retorno.`;
   },
 
-  // Redes sociais (link atualizado)
   site: `*REDES SOCIAIS MADALA CF* 📱
 🌐 Site oficial
 https://www.madalacf.com.br/`,
@@ -357,28 +372,47 @@ https://www.madalacf.com.br/`,
 const estado = {}; // { [chatId]: 'MAIN' | 'CF_MENU' | 'AWAIT_HUMAN' | 'HUMAN_HANDOFF' }
 const STATES = { MAIN: 'MAIN', CF_MENU: 'CF_MENU', AWAIT_HUMAN: 'AWAIT_HUMAN', HUMAN_HANDOFF: 'HUMAN_HANDOFF' };
 
-// Silêncio pós-handoff (padrão 30 min) — configurável por env HANDOFF_SILENCE_MS
+// ===== HUMAN_HANDOFF robusto =====
+const OWNER_TAKEOVER_MS = Number(process.env.OWNER_TAKEOVER_MS || 15 * 60 * 1000); // 15 min
 const HANDOFF_SILENCE_MS = Number(process.env.HANDOFF_SILENCE_MS || 30 * 60 * 1000);
 const handoffSilenceUntil = Object.create(null);
 
-// ===== Regex de saudações (asciiText já vem sem acentos) =====
-const SAUDACOES_RE = /\b(menu|oi|ola|oie|hey|eai|bom dia|boa tarde|boa noite|hello|hi|alo|aloo|opa|e ae|e aew|eae|fala|falae|salve|yo|blz|beleza|tudo bem|como vai|iniciar|inicio|start|comecar|ajuda|help|suporte|atendimento|quero falar|quero atendimento|preciso de ajuda)\b/i;
-// Palavras que "acordam" o bot durante o silêncio
-const WAKE_RE = /\b(menu|voltar|oi|ola|oie|ajuda|help|start|iniciar|inicio)\b/i;
+// >>> Silêncio específico para anexos + fila da "próxima mensagem"
+const ATTACHMENT_SILENCE_MS = Number(process.env.ATTACHMENT_SILENCE_MS || 15 * 60 * 1000); // 15 min
+const PENDING_FORWARD_TTL_MS = Number(process.env.PENDING_FORWARD_TTL_MS || 10 * 60 * 1000);
+const pendingForwardText = Object.create(null); // { [chatId]: expiresAtTs }
 
-// ===== Menu em texto (sem List) =====
+// Palavras que "acordam" o bot durante o silêncio
+const WAKE_TOKENS = ['menu', '/menu', 'start', '/start', 'voltar menu', 'voltar ao menu', 'retornar menu'];
+function wakeIntent(text) {
+  const cleaned = (text || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\s/]/gu, ' ')
+    .toLowerCase();
+  for (const tok of WAKE_TOKENS) {
+    const t = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${t}\\b`, 'i').test(cleaned)) return tok;
+  }
+  return null;
+}
+
+// ===== Regex de saudações =====
+const SAUDACOES_RE = /\b(menu|oi|ola|oie|hey|eai|bom dia|boa tarde|boa noite|hello|hi|alo|aloo|opa|e ae|e aew|eae|fala|falae|salve|yo|blz|beleza|tudo bem|como vai|iniciar|inicio|start|comecar|ajuda|help|suporte|atendimento|quero falar|quero atendimento|preciso de ajuda)\b/i;
+
+// ===== Menu em texto =====
 async function enviarMenu(msg, _chat, nome) {
+  if (shouldSkip(msg.from, 'MENU', 5000)) return; // evita duplicidade
   await client.sendMessage(msg.from, menuText(nome));
 }
 
-// ===== Router principal (UM ÚNICO listener) =====
+// ===== Router principal =====
 client.on('message', async (msg) => {
   try {
     // Ignora grupos/status
     if (!msg.from.endsWith('@c.us')) return;
 
     // evita loop ao enviar alerta para você mesmo
-    if (msg.fromMe || msg.from === OWNER_JID) return;
+    if (msg.from === OWNER_JID) return;
 
     const chat    = await msg.getChat();
     const contact = await msg.getContact();
@@ -393,23 +427,46 @@ client.on('message', async (msg) => {
     const lowerText = rawText.toLowerCase();
     let   asciiText = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+    // --- Repasse automático da PRÓXIMA mensagem após anexo sem caption ---
+    if (pendingForwardText[chatId] && msg.type === 'chat') {
+      const expiresAt = pendingForwardText[chatId];
+      delete pendingForwardText[chatId];
+      if (Date.now() < expiresAt) {
+        const numero = jidToNumber(chatId);
+        const texto  = (msg.body || '').trim();
+        if (texto) {
+          await client.sendMessage(
+            MANAGER_JID,
+            [
+              '💬 *Mensagem posterior do cliente*',
+              `• *Número:* https://wa.me/${numero}`,
+              `• *Texto:* ${texto}`
+            ].join('\n')
+          );
+        }
+      }
+    }
+
     // ===== SILÊNCIO PÓS-HANDOFF =====
     if (current === STATES.HUMAN_HANDOFF) {
-      const now = Date.now();
+      const now   = Date.now();
       const until = handoffSilenceUntil[chatId] || 0;
-      const wake = WAKE_RE.test(asciiText);
+      const wake  = wakeIntent(lowerText);
 
-      if (now < until && !wake) {
-        // mantém silêncio absoluto
+      if (now < until) {
+        // ainda em silêncio → só acorda com wake explícito
+        if (wake && /menu|start/i.test(wake)) {
+          estado[chatId] = STATES.MAIN;
+          delete handoffSilenceUntil[chatId];
+          await enviarMenu(msg, chat, nome);
+        }
         return;
       }
-      // Expirou ou o cliente pediu para voltar
+
+      // silêncio expirou → volta ao MAIN, sem enviar menu automaticamente
       estado[chatId] = STATES.MAIN;
       delete handoffSilenceUntil[chatId];
-      if (wake) {
-        await enviarMenu(msg, chat, nome);
-      }
-      return;
+      // cai para o fluxo normal
     }
 
     // ===== ETAPA 2 DO HANDOFF: aguardando descrição =====
@@ -417,7 +474,7 @@ client.on('message', async (msg) => {
       const assunto = rawText || '[sem texto]';
       const numeroCliente = jidToNumber(msg.from);
 
-      // 1) Notifica você (no mesmo número) — SOMENTE a mensagem de texto
+      // 1) Notifica você (owner)
       const alerta = [
         '🔔 *Novo cliente aguardando atendimento*',
         `• *Nome:* ${nome || '-'}`,
@@ -426,60 +483,73 @@ client.on('message', async (msg) => {
         `• *Quando:* ${new Date().toLocaleString('pt-BR')}`,
       ].join('\n');
 
-      try {
-        await client.sendMessage(OWNER_JID, alerta);
-      } catch (e) {
-        console.error('[HANDOFF] Falha ao alertar o owner:', e);
-      }
+      try { await client.sendMessage(OWNER_JID, alerta); }
+      catch (e) { console.error('[HANDOFF] Falha ao alertar o owner:', e); }
 
-      // 2) Confirma para o cliente e entra em SILÊNCIO
+      // 2) Confirma e entra em silêncio (handoff efetivo)
       await client.sendMessage(chatId, 'Aguarde, estamos direcionando seu atendimento.');
       estado[chatId] = STATES.HUMAN_HANDOFF;
       handoffSilenceUntil[chatId] = Date.now() + HANDOFF_SILENCE_MS;
       return;
     }
 
-    // ⬇️ ANEXOS PRIMEIRO (fora do fluxo normal) — salva, responde e encaminha para a gerente
+    // ⬇️ ANEXOS PRIMEIRO — salva, responde e encaminha para a gerente + silêncio 15min
     if (
       msg.hasMedia ||
       ['image','document','audio','video','ptt','sticker'].includes(msg.type)
     ) {
       try {
         const numero  = jidToNumber(msg.from);
+        const media   = await msg.downloadMedia(); // { data(base64), mimetype, filename? }
+        const nomeCont = contact.pushname || '';
 
-        const media = await msg.downloadMedia(); // { data(base64), mimetype, filename? }
         if (media && media.data) {
-          const ext  = (media.mimetype?.split('/')[1] || 'bin').replace(/[^a-z0-9]+/gi,'');
+          let ext  = (media.mimetype?.split('/')[1] || 'bin').toLowerCase();
+          if (ext === 'jpeg') ext = 'jpg';
+          ext = ext.replace(/[^a-z0-9]+/gi,'') || 'bin';
           const base = media.filename ? media.filename.replace(/\.[^.]+$/, '') : 'anexo';
           const fileName = `${Date.now()}_${numero}_${base}.${ext}`;
           const filePath = path.join(UPLOAD_DIR, fileName);
           fs.writeFileSync(filePath, Buffer.from(media.data, 'base64'));
 
-          // Confirma ao cliente
           await msg.reply('Obrigado! Estamos anexando seu documento em nosso banco de dados.');
 
-          // Registra último envio p/ follow-up
-          recordMediaFrom(msg.from, (await msg.getContact()).pushname || '');
+          // Registra para follow-up e aplica silêncio específico de anexo
+          recordMediaFrom(msg.from, nomeCont);
+          estado[msg.from] = STATES.HUMAN_HANDOFF;
+          handoffSilenceUntil[msg.from] = Date.now() + ATTACHMENT_SILENCE_MS;
 
-          // Encaminha para a gerente
+          // Monta mensagem de resumo + envia o ARQUIVO à gerência
+          const captionOrText = (msg.body || '').trim(); // caption do media ou corpo
+          const resumo = [
+            '📎 *Cliente enviou um anexo*',
+            `• *Nome:* ${nomeCont || '-'}`,
+            `• *Número:* https://wa.me/${numero}`,
+            `• *Tipo:* ${media.mimetype || '-'}`,
+            `• *Arquivo:* ${fileName}`,
+            `• *Quando:* ${new Date().toLocaleString('pt-BR')}`,
+            captionOrText ? `• *Mensagem:* ${captionOrText}` : '• *Mensagem:* (sem texto)'
+          ].join('\n');
+
           try {
             const mm = MessageMedia.fromFilePath(filePath);
-            await client.sendMessage(MANAGER_JID, mm, { caption: `Anexo de ${numero}` });
+            await client.sendMessage(MANAGER_JID, mm, { caption: resumo });
           } catch (e) {
             console.error('[MANAGER_SEND_FILE_ERR]', e);
+            await client.sendMessage(MANAGER_JID, resumo + '\n⚠️ Falha ao anexar arquivo — salvo no servidor.');
+          }
+
+          // Se NÃO houve caption/texto, aguarda a PRÓXIMA mensagem do cliente para repassar
+          if (!captionOrText) {
+            pendingForwardText[msg.from] = Date.now() + PENDING_FORWARD_TTL_MS;
+            await client.sendMessage(
+              MANAGER_JID,
+              '⏳ Aguardando a *próxima mensagem do cliente* para repassar automaticamente.'
+            );
           }
 
           // (Opcional) alerta resumido para o owner
-          try {
-            const alerta = [
-              '📎 *Novo anexo recebido*',
-              `• *Número:* https://wa.me/${numero}`,
-              `• *Tipo:* ${media.mimetype || '-'}`,
-              `• *Arquivo:* ${fileName}`,
-              `• *Quando:* ${new Date().toLocaleString('pt-BR')}`
-            ].join('\n');
-            await client.sendMessage(OWNER_JID, alerta);
-          } catch {}
+          try { await client.sendMessage(OWNER_JID, resumo); } catch {}
         } else {
           await msg.reply('Recebi sua mensagem, mas não consegui baixar o arquivo. Pode reenviar?');
         }
@@ -490,17 +560,16 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // Se mandou comprovante por texto (sem anexo), não abre menu
-    const looksLikeReceipt =
-      /(comprovante|pagamento|paguei|pix|boleto|nota|nf|recibo)/i.test(rawText);
+    // ===== Agradece/ack via texto: "comprovante/paguei/pix..." =====
+    const looksLikeReceipt = /(comprovante|pagamento|paguei|pix|boleto|nota|nf|recibo)/i.test(rawText);
     if (looksLikeReceipt) {
-      await msg.reply('Obrigado! Estamos anexando documento no sistema.');
+      await msg.reply('Obrigado! Estamos anexando documento no sistema. ✅');
       return;
     }
 
-    // ===== INTENTS PRIORITÁRIAS (antes de saudação) =====
-    const wantsPrice = /\b(preco|preço|valor|valores|tabela|quanto|mensal|mensalidade|plano|planos?)\b/i.test(asciiText);
-    const wantsSchedule = /\b(agendar|agendamento|marcar|agenda|horario|horarios|disponibilidade|aula experimental|trial|drop[ -]?in)\b/i.test(asciiText);
+    // ===== INTENTS PRIORITÁRIAS (antes de saudação)
+    const wantsPrice     = /\b(preco|preço|valor|valores|tabela|quanto|mensal|mensalidade|plano|planos?)\b/i.test(asciiText);
+    const wantsSchedule  = /\b(agendar|agendamento|marcar|agenda|horario|horarios|disponibilidade|aula experimental|trial|drop[ -]?in)\b/i.test(asciiText);
 
     if (wantsPrice) {
       await typing(chat);
@@ -518,7 +587,7 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // ===== Gatilho de saudação/menu (vem DEPOIS dos intents) =====
+    // ===== Saudação/menu (vem DEPOIS dos intents)
     const ehSaudacao = SAUDACOES_RE.test(asciiText);
     if (ehSaudacao) {
       estado[chatId] = STATES.MAIN;
@@ -528,9 +597,9 @@ client.on('message', async (msg) => {
 
     const st = estado[chatId] || STATES.MAIN;
 
-    // ===== MAIN (menu principal) =====
+    // ===== MAIN (menu principal)
     if (st === STATES.MAIN) {
-      // 0) Atendente (inicia handoff → pede descrição)
+      // 0) Atendente (handoff → pede descrição)
       if (asciiText === '0' || lowerText.startsWith('0 - ☎')) {
         await typing(chat);
         await client.sendMessage(
@@ -616,7 +685,7 @@ client.on('message', async (msg) => {
       return;
     }
 
-    // ===== CF_MENU (pós-menu do CrossFit) =====
+    // ===== CF_MENU (pós-menu do CrossFit)
     if (st === STATES.CF_MENU) {
       // "mais" → planos
       if ([
@@ -682,6 +751,42 @@ client.on('message', async (msg) => {
 
   } catch (err) {
     console.error('Erro no processamento da mensagem:', err);
+  }
+});
+
+// ===== Takeover humano (ativa silêncio ao você falar) =====
+// Usa o evento "message_create" para capturar mensagens que VOCÊ envia.
+client.on('message_create', async (msg) => {
+  try {
+    if (!msg.fromMe) return;
+
+    // só interessa quando você fala com um contato (1:1)
+    const target = msg.to && String(msg.to).endsWith('@c.us') ? msg.to : null;
+    if (!target) return;
+
+    // 1) Se o envio acabou de ser feito PELO BOT (menus/respostas), ignore (grace)
+    if (lastBotSendTs[target] && (Date.now() - lastBotSendTs[target]) < BOT_SEND_GRACE_MS) {
+      return;
+    }
+
+    // 2) Mensagens curtíssimas/ACK não renovam silêncio
+    const t = (msg.body || '').trim().toLowerCase();
+    const isTinyAck = t.length <= 2 || /^(ok|👍|👌|✔️|vlw|tmj|obg|kk|sim)$/i.test(t);
+    if (isTinyAck) return;
+
+    // 3) Se já está em HUMAN_HANDOFF e ainda não expirou, não renove
+    const now = Date.now();
+    const alreadyUntil = handoffSilenceUntil[target] || 0;
+    if ((estado[target] === STATES.HUMAN_HANDOFF) && now < alreadyUntil) {
+      return;
+    }
+
+    // 4) Aciona silêncio de takeover humano
+    estado[target] = STATES.HUMAN_HANDOFF;
+    handoffSilenceUntil[target] = now + OWNER_TAKEOVER_MS;
+    console.log('[HANDOFF] takeover by owner for', target, 'until', new Date(handoffSilenceUntil[target]).toISOString());
+  } catch (e) {
+    console.error('[HANDOFF_SET_ERR]', e);
   }
 });
 
